@@ -1,0 +1,3118 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>خزنة الصور المشفرة | Private Encrypted Photo Vault</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Cairo', 'Inter', 'sans-serif'],
+            mono: ['Inter', 'monospace']
+          },
+          colors: {
+            vault: {
+              950: '#070b14',
+              900: '#0f172a',
+              800: '#1e293b',
+              700: '#334155',
+              accent: '#10b981',
+              accentHover: '#059669'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Cairo', 'Inter', sans-serif;
+      background-color: #070b14;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+    .glass-modal {
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.5);
+      border-radius: 9999px;
+    }
+    .photo-card:hover .photo-overlay {
+      opacity: 1;
+    }
+    @keyframes pulseBorder {
+      0%, 100% { border-color: rgba(16, 185, 129, 0.4); }
+      50% { border-color: rgba(16, 185, 129, 0.9); }
+    }
+    .drag-active {
+      animation: pulseBorder 1.5s infinite;
+      background: rgba(16, 185, 129, 0.08) !important;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white custom-scroll">
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 left-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- BATCH PROGRESS OVERLAY MODAL (FOR 1,000+ PHOTOS UPLOAD / EXPORT / RESTORE) -->
+  <div id="batchProgressModal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="glass-modal w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 border border-emerald-500/30">
+      <div class="flex items-center justify-between">
+        <h4 id="batchProgressTitle" class="text-base font-bold text-white">جاري معالجة وتشفير الصور...</h4>
+        <span id="batchProgressPercent" class="text-sm font-mono font-bold text-emerald-400">0%</span>
+      </div>
+      <div class="w-full h-3 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+        <div id="batchProgressBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-150" style="width: 0%"></div>
+      </div>
+      <div class="flex items-center justify-between text-xs text-slate-400">
+        <span id="batchProgressDetail">0 / 0 صورة</span>
+        <button
+          type="button"
+          id="cancelBatchBtn"
+          class="px-3 py-1 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-700/50 text-rose-300 font-semibold transition"
+        >
+          إيقاف عند هذا الحد
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 1: LOCK / AUTHENTICATION SCREEN                      -->
+  <!-- ========================================================= -->
+  <main id="authView" class="flex-1 flex items-center justify-center p-4 sm:p-6 relative">
+    <!-- Subtle Background Glow -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="absolute -top-24 -right-24 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
+      <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl"></div>
+    </div>
+
+    <div class="glass-card w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10">
+      <!-- Vault Logo & Security Badge -->
+      <div class="flex flex-col items-center text-center mb-6">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-900/40 mb-4">
+          <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mb-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          تشفير ثنائي سريع AES-256-GCM (يدعم +1000 صورة)
+        </span>
+        <h1 id="authTitle" class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">خزنة الصور المشفرة</h1>
+        <p id="authSubtitle" class="text-sm text-slate-400 mt-1.5 leading-relaxed">
+          صورك تُشفر ثنائياً (Binary AES-256) داخل متصفحك بكلمة مرورك الخاصة قبل الحفظ، ولا تُرسل لأي سيرفر خارجي.
+        </p>
+      </div>
+
+      <!-- Setup Mode vs Unlock Mode Banner -->
+      <div id="vaultStatusBanner" class="mb-5 p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/70 flex items-center justify-between text-xs sm:text-sm">
+        <div class="flex items-center gap-2.5">
+          <span id="vaultStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+          <span id="vaultStatusText" class="text-slate-200 font-medium">جاري فحص حالة الخزنة على هذا المتصفح...</span>
+        </div>
+        <span id="vaultCountBadge" class="px-2.5 py-0.5 rounded-lg bg-slate-700 text-slate-300 font-mono text-xs">0 صورة</span>
+      </div>
+
+      <!-- Auth Form -->
+      <form id="authForm" class="space-y-4">
+        <div>
+          <label for="masterPasswordInput" class="block text-xs font-semibold text-slate-300 mb-1.5">
+            كلمة المرور الرئيسية (Master Password)
+          </label>
+          <div class="relative">
+            <input
+              id="masterPasswordInput"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="أدخل كلمة المرور لفتح أو تشفير الخزنة..."
+              class="w-full rounded-xl bg-slate-900/90 border border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition"
+            />
+            <button
+              type="button"
+              id="togglePwdBtn"
+              class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+              title="إظهار / إخفاء كلمة المرور"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="confirmPasswordWrapper" class="hidden">
+          <label for="confirmPasswordInput" class="block text-xs font-semibold text-slate-300 mb-1.5">
+            تأكيد كلمة المرور الجديدة
+          </label>
+          <input
+            id="confirmPasswordInput"
+            type="password"
+            placeholder="أعد كتابة كلمة المرور للتأكيد..."
+            class="w-full rounded-xl bg-slate-900/90 border border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition"
+          />
+          <p class="text-xs text-amber-400/90 mt-1.5">
+            ⚠️ تذكر كلمة المرور جيداً؛ لأن التشفير حقيقي (Zero-Knowledge) ولا يمكن فك تشفير الصور بدونها.
+          </p>
+        </div>
+
+        <button
+          type="submit"
+          id="authSubmitBtn"
+          class="w-full py-3.5 px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg shadow-emerald-900/40 transition flex items-center justify-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
+          </svg>
+          <span id="authSubmitText">فتح الخزنة المشفرة</span>
+        </button>
+      </form>
+
+      <!-- Restore Directly From Backup File on Lock Screen -->
+      <div class="mt-6 pt-5 border-t border-slate-800 flex flex-col gap-3">
+        <div class="text-xs text-slate-400 text-center">فقدت بيانات المتصفح أو فتحت الموقع من جهاز جديد؟</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            id="lockScreenRestoreBtn"
+            class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-2"
+          >
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            <span>استرجاع من ملف (.vault / .zip)</span>
+          </button>
+          <button
+            type="button"
+            id="lockScreenResetBtn"
+            class="py-2.5 px-3 rounded-xl bg-slate-800/60 hover:bg-rose-950/50 border border-slate-700/80 hover:border-rose-700/60 text-slate-300 hover:text-rose-300 text-xs font-semibold transition flex items-center justify-center gap-2"
+          >
+            <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <span>تهيئة خزنة جديدة فارغة</span>
+          </button>
+        </div>
+        <input id="lockRestoreFileInput" type="file" accept=".vault,.json,.zip" class="hidden" />
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 2: UNLOCKED VAULT DASHBOARD                          -->
+  <!-- ========================================================= -->
+  <div id="vaultView" class="hidden flex-1 flex flex-col min-h-screen">
+    <!-- Top Header Navigation -->
+    <header class="glass-card sticky top-0 z-30 border-b border-slate-800/80 px-4 sm:px-6 py-3">
+      <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+        <!-- Brand & Live Security Status -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-md">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-base sm:text-lg font-bold text-white">خزنتي المشفرة</h2>
+              <span class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                AES-256 نشط
+              </span>
+            </div>
+            <p id="headerStatsText" class="text-xs text-slate-400">0 صورة • 0.00 MB محفوظة محلياً</p>
+          </div>
+        </div>
+
+        <!-- Action Toolbar -->
+        <div class="flex items-center flex-wrap gap-2">
+          <!-- Upload Button -->
+          <button
+            type="button"
+            id="topUploadBtn"
+            class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-950 transition flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>رفع صور</span>
+          </button>
+
+          <!-- Upload Entire Folder (1000+ Photos) Button -->
+          <button
+            type="button"
+            id="topUploadFolderBtn"
+            class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-bold transition flex items-center gap-1.5"
+            title="اختيار مجلد كامل يحتوي على مئات أو آلاف الصور دفعة واحدة"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+            </svg>
+            <span>رفع مجلد كامل</span>
+          </button>
+
+          <!-- Export Backup Dropdown / Modal Trigger -->
+          <button
+            type="button"
+            id="openBackupModalBtn"
+            class="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-bold transition flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            <span>حفظ واسترجاع الملف</span>
+          </button>
+
+          <!-- Cloud GitHub Sync & Settings -->
+          <button
+            type="button"
+            id="openSettingsModalBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold transition flex items-center gap-1.5"
+            title="إعدادات الأمان والمزامنة مع GitHub"
+          >
+            <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <span class="hidden sm:inline">الإعدادات و GitHub</span>
+          </button>
+
+          <!-- Guide Modal Trigger -->
+          <button
+            type="button"
+            id="openGuideModalBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs sm:text-sm font-semibold transition flex items-center gap-1.5"
+            title="طريقة نشر الموقع على GitHub Pages مجاناً"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="hidden md:inline">دليل GitHub Pages</span>
+          </button>
+
+          <!-- Panic / Quick Lock Button -->
+          <button
+            type="button"
+            id="quickLockBtn"
+            class="px-3.5 py-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs sm:text-sm font-bold transition flex items-center gap-1.5"
+            title="قفل فوري للخزنة (Esc)"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <span>قفل</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <div class="max-w-7xl w-full mx-auto flex-1 px-4 sm:px-6 py-6 flex flex-col gap-6">
+
+      <!-- Drag & Drop Upload Zone + Quick Options -->
+      <section
+        id="dropZone"
+        class="glass-card rounded-2xl p-5 border-2 border-dashed border-slate-700 hover:border-emerald-500/60 transition cursor-pointer flex flex-col md:flex-row items-center justify-between gap-4"
+      >
+        <div class="flex items-center gap-4 text-center md:text-right flex-col sm:flex-row">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-white">اسحب وأفلت صورك أو مجلداتك هنا أو اضغط لاختيار الصور (يدعم +1000 صورة دفعة واحدة)</h3>
+            <p class="text-xs text-slate-400 mt-0.5">
+              تشفير ثنائي مباشر (Binary AES-256) على دفعات ذكية بدون استهلاك الرام، مع مصغرات سريعة وتقسيم صفحات تلقائي.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-center gap-2.5 shrink-0" id="uploadControlsArea">
+          <!-- Target Album Selector on Upload -->
+          <select
+            id="uploadAlbumSelect"
+            aria-label="الألبوم عند الرفع"
+            class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-200 outline-none focus:border-emerald-500"
+          >
+            <option value="عام">📁 ألبوم: عام</option>
+            <option value="شخصي">🔒 ألبوم: شخصي</option>
+            <option value="مستندات">📄 ألبوم: مستندات</option>
+            <option value="سفر وذكريات">✈️ ألبوم: سفر وذكريات</option>
+          </select>
+
+          <!-- Smart Compression Toggle -->
+          <label class="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-300 cursor-pointer select-none" title="تقليل حجم الصور الكبيرة تلقائياً لتوفير مساحة أكبر">
+            <input type="checkbox" id="compressToggle" class="rounded accent-emerald-500" />
+            <span>ضغط ذكي للحجم</span>
+          </label>
+
+          <!-- Demo Photos Generator Button -->
+          <button
+            type="button"
+            id="loadDemoPhotosBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-emerald-300 text-xs font-semibold transition"
+          >
+            + إضافة 3 صور تجريبية
+          </button>
+        </div>
+        <input id="photoFileInput" type="file" accept="image/*" multiple class="hidden" />
+        <input id="photoFolderInput" type="file" webkitdirectory directory multiple class="hidden" />
+      </section>
+
+      <!-- Filters, Albums, Search & Bulk Actions Bar -->
+      <section class="glass-card rounded-2xl p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        <!-- Album Tabs -->
+        <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll pb-1 lg:pb-0" id="albumTabsContainer">
+          <!-- Populated dynamically via JS -->
+        </div>
+
+        <!-- Search, Sort & New Album Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Add New Album -->
+          <button
+            type="button"
+            id="openNewAlbumModalBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1"
+          >
+            <span>+ ألبوم جديد</span>
+          </button>
+
+          <!-- Search Input -->
+          <div class="relative flex-1 sm:w-52">
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="ابحث باسم الصورة أو الملاحظة..."
+              class="w-full rounded-xl bg-slate-900 border border-slate-700 focus:border-emerald-500 px-3 py-2 pr-8 text-xs text-white placeholder-slate-500 outline-none"
+            />
+            <svg class="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+
+          <!-- Sort Select -->
+          <select
+            id="sortSelect"
+            aria-label="ترتيب الصور"
+            class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-200 outline-none focus:border-emerald-500"
+          >
+            <option value="newest">الأحدث أولاً</option>
+            <option value="oldest">الأقدم أولاً</option>
+            <option value="largest">الأكبر حجماً</option>
+            <option value="name">حسب الاسم (أ-ي)</option>
+          </select>
+
+          <!-- Select All / Delete Selected -->
+          <button
+            type="button"
+            id="selectAllBtn"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 transition"
+          >
+            تحديد الكل
+          </button>
+          <button
+            type="button"
+            id="deleteSelectedBtn"
+            class="hidden px-3 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/40 text-xs text-rose-300 font-semibold transition"
+          >
+            حذف المحدد (<span id="selectedCountSpan">0</span>)
+          </button>
+        </div>
+      </section>
+
+      <!-- Photo Grid & Pagination -->
+      <section class="flex-1 flex flex-col gap-4">
+        <div id="emptyVaultState" class="hidden flex-1 glass-card rounded-3xl p-10 text-center flex flex-col items-center justify-center my-4">
+          <div class="w-16 h-16 rounded-2xl bg-slate-800/90 border border-slate-700 flex items-center justify-center text-slate-400 mb-4">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">لا توجد صور في هذا العرض حالياً</h3>
+          <p class="text-xs sm:text-sm text-slate-400 max-w-md mb-5">
+            ارفع صورك أو مجلداتك الآن ليتم تشفيرها وحفظها داخل الخزنة، أو استرجع صورك السابقة من ملف نسخة احتياطية (`.vault` أو `.zip`).
+          </p>
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              id="emptyUploadBtn"
+              class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition"
+            >
+              + رفع صور من جهازي
+            </button>
+            <button
+              type="button"
+              id="emptyRestoreBtn"
+              class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold transition"
+            >
+              استرجاع من ملف محفوظ
+            </button>
+          </div>
+        </div>
+
+        <div id="photoGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <!-- Photo cards rendered dynamically (paginated for instant 1000+ photo performance) -->
+        </div>
+
+        <!-- Pagination Controls for Large Galleries (1,000+ Photos) -->
+        <div id="paginationBar" class="hidden glass-card rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <span id="paginationInfoText" class="text-slate-300 font-semibold">عرض 1 - 60 من 1000 صورة</span>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              id="prevPageBtn"
+              class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold transition disabled:opacity-40"
+            >
+              السابق
+            </button>
+            <span id="pageIndicatorText" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 font-mono font-bold">
+              1 / 1
+            </span>
+            <button
+              type="button"
+              id="nextPageBtn"
+              class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold transition disabled:opacity-40"
+            >
+              التالي
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 1: BACKUP EXPORT & RESTORE (.VAULT & .ZIP)          -->
+  <!-- ========================================================= -->
+  <div id="backupModal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-modal w-full max-w-2xl rounded-3xl p-6 sm:p-7 shadow-2xl my-8">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-white">حفظ واسترجاع الصور بملف خارجي</h3>
+            <p class="text-xs text-slate-400">يدعم تصدير واسترجاع آلاف الصور (Multi-GB Streaming) بدون حدود حجم</p>
+          </div>
+        </div>
+        <button type="button" id="closeBackupModalBtn" class="text-slate-400 hover:text-white p-1.5 rounded-lg bg-slate-800/80">
+          ✕
+        </button>
+      </div>
+
+      <!-- Export Options -->
+      <div class="mb-6">
+        <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-3">1. تصدير وحفظ الصور من الموقع إلى ملف بجهازك</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <!-- Option A: Encrypted .vault file -->
+          <div class="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/30 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-bold text-white">ملف خزنة مشفر (`.vault`)</span>
+                <span class="px-2 py-0.5 text-[10px] rounded-md bg-emerald-500/20 text-emerald-300 font-semibold">أعلى أماناً</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                يحفظ جميع الصور، الألبومات، والملاحظات بنظام التدفق المقسم (Chunked Stream) المشفر بـ AES-256 حتى لو كانت 1000+ صورة. لا يمكن فتحه إلا بكلمة مرورك.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="exportVaultFileBtn"
+              class="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center justify-center gap-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+              </svg>
+              <span>تحميل ملف `.vault` المشفر</span>
+            </button>
+          </div>
+
+          <!-- Option B: Standard .zip archive -->
+          <div class="p-4 rounded-2xl bg-slate-900/90 border border-sky-500/30 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-bold text-white">أرشيف صور مضغوط (`.zip`)</span>
+                <span class="px-2 py-0.5 text-[10px] rounded-md bg-sky-500/20 text-sky-300 font-semibold">يعمل بكل مكان</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                يجمع كل صورك الأصلية مقسمة بمجلدات حسب الألبوم مع ملف بياناتها داخل ملف `.zip` قياسي سريع، تگدر تفتحه بأي موبايل أو حاسبة أو ترجعه للموقع لاحقاً.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="exportZipFileBtn"
+              class="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition flex items-center justify-center gap-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+              <span>تحميل ملف الصور `.zip`</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Import / Restore Options -->
+      <div class="pt-4 border-t border-slate-800">
+        <h4 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-3">2. استرجاع الصور إلى الموقع من ملف محفوظ</h4>
+        <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="text-xs text-slate-300 space-y-1">
+            <p class="font-bold text-white text-sm">ارفع ملف (`.vault` أو `.zip` أو `.json`)</p>
+            <p class="text-slate-400">
+              يدمج الصور المسترجعة مع خزنتك الحالية بدون مسح الصور الموجودة، وإذا كان ملف `.vault` مشفراً بكلمة مرور مختلفة سيطلبها منك لفك التشفير.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="triggerImportFileBtn"
+            class="shrink-0 py-2.5 px-5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white text-xs font-bold transition"
+          >
+            اختيار ملف للاسترجاع...
+          </button>
+          <input id="importBackupFileInput" type="file" accept=".vault,.json,.zip" class="hidden" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 2: LIGHTBOX PHOTO VIEWER & EDITOR                   -->
+  <!-- ========================================================= -->
+  <div id="lightboxModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-3 sm:p-6">
+    <div class="glass-modal w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 lg:grid-cols-3 max-h-[92vh]">
+      <!-- Image Display Canvas -->
+      <div class="lg:col-span-2 bg-slate-950 flex flex-col justify-between relative min-h-[300px] sm:min-h-[440px] max-h-[65vh] lg:max-h-[92vh] overflow-hidden">
+        <!-- Top Viewer Controls -->
+        <div class="flex items-center justify-between p-3 bg-gradient-to-b from-black/70 to-transparent z-10">
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="zoomInBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs font-bold" title="تكبير">+</button>
+            <button type="button" id="zoomOutBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs font-bold" title="تصغير">−</button>
+            <button type="button" id="rotateImgBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs font-semibold" title="تدوير 90 درجة">↻ تدوير</button>
+            <button type="button" id="resetTransformBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs">100%</button>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="prevPhotoBtn" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs">السابق</button>
+            <button type="button" id="nextPhotoBtn" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs">التالي</button>
+          </div>
+        </div>
+
+        <!-- Center Image Preview -->
+        <div class="flex-1 flex items-center justify-center p-4 overflow-auto">
+          <img
+            id="lightboxImg"
+            src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+            alt="معاينة الصورة"
+            class="max-h-[52vh] lg:max-h-[72vh] max-w-full object-contain transition-transform duration-200 select-none rounded-lg"
+          />
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="p-3 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between text-xs text-slate-300 z-10">
+          <span id="lightboxDimensionsText">-- × --</span>
+          <span id="lightboxIndexText">1 / 1</span>
+        </div>
+      </div>
+
+      <!-- Metadata & Edit Panel -->
+      <div class="p-5 sm:p-6 flex flex-col justify-between bg-slate-900/95 border-t lg:border-t-0 lg:border-r border-slate-800 overflow-y-auto custom-scroll">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-base font-bold text-white">تفاصيل الصورة المشفرة</h3>
+            <button type="button" id="closeLightboxBtn" class="text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-slate-800">✕</button>
+          </div>
+
+          <div>
+            <label for="detailNameInput" class="block text-xs text-slate-400 mb-1">اسم الصورة</label>
+            <input
+              id="detailNameInput"
+              type="text"
+              class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-emerald-500 px-3 py-2 text-xs text-white outline-none"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label for="detailAlbumSelect" class="block text-xs text-slate-400 mb-1">الألبوم</label>
+              <select
+                id="detailAlbumSelect"
+                class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-emerald-500 px-3 py-2 text-xs text-white outline-none"
+              ></select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">المفضلة</label>
+              <button
+                type="button"
+                id="detailFavBtn"
+                class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 flex items-center justify-center gap-1.5"
+              >
+                <span id="detailFavStar">☆</span>
+                <span id="detailFavLabel">إضافة للمفضلة</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label for="detailNoteInput" class="block text-xs text-slate-400 mb-1">ملاحظة خاصة مشفرة مع الصورة</label>
+            <textarea
+              id="detailNoteInput"
+              rows="3"
+              placeholder="اكتب أي وصف أو أرقام سرية أو تاريخ يخص الصورة..."
+              class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-emerald-500 p-3 text-xs text-white outline-none resize-none"
+            ></textarea>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1 text-xs text-slate-400">
+            <div class="flex justify-between"><span>الحجم:</span><span id="detailSizeText" class="text-slate-200 font-mono">--</span></div>
+            <div class="flex justify-between"><span>تاريخ الحفظ:</span><span id="detailDateText" class="text-slate-200">--</span></div>
+            <div class="flex justify-between"><span>حالة التشفير:</span><span class="text-emerald-400 font-semibold">AES-256-GCM</span></div>
+          </div>
+        </div>
+
+        <div class="pt-4 mt-4 border-t border-slate-800 flex flex-col gap-2">
+          <button
+            type="button"
+            id="savePhotoDetailsBtn"
+            class="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition"
+          >
+            حفظ التعديلات وتشفيرها
+          </button>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              id="downloadSinglePhotoBtn"
+              class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
+            >
+              تحميل الصورة
+            </button>
+            <button
+              type="button"
+              id="deleteSinglePhotoBtn"
+              class="py-2 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-700/50 text-rose-300 text-xs font-semibold transition"
+            >
+              حذف نهائي
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 3: SECURITY SETTINGS & GITHUB CLOUD SYNC            -->
+  <!-- ========================================================= -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-modal w-full max-w-2xl rounded-3xl p-6 sm:p-7 shadow-2xl my-8 space-y-6 max-h-[90vh] overflow-y-auto custom-scroll">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div>
+          <h3 class="text-lg font-bold text-white">إعدادات التشفير، القفل التلقائي، ومزامنة GitHub</h3>
+          <p class="text-xs text-slate-400">كل الميزات مجانية 100% وتعمل مباشرة من متصفحك</p>
+        </div>
+        <button type="button" id="closeSettingsModalBtn" class="text-slate-400 hover:text-white p-1.5 rounded-lg bg-slate-800">✕</button>
+      </div>
+
+      <!-- Storage Quota Info -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-bold text-white">مساحة التخزين في المتصفح (IndexedDB Quota)</h4>
+          <p id="storageQuotaText" class="text-xs text-slate-400">جاري فحص المساحة المتاحة لتخزين آلاف الصور...</p>
+        </div>
+        <span class="px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs font-semibold">تخزين ثنائي مضغوط</span>
+      </div>
+
+      <!-- Auto-Lock Timer -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-bold text-white">القفل التلقائي عند عدم الاستخدام (Auto-Lock)</h4>
+          <p class="text-xs text-slate-400">يقفل الخزنة ويمسح مفاتيح فك التشفير من الذاكرة المؤقتة تلقائياً</p>
+        </div>
+        <select
+          id="autoLockSelect"
+          aria-label="مدة القفل التلقائي"
+          class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+        >
+          <option value="5">بعد 5 دقائق</option>
+          <option value="15">بعد 15 دقيقة</option>
+          <option value="30">بعد 30 دقيقة</option>
+          <option value="0">إيقاف القفل التلقائي</option>
+        </select>
+      </div>
+
+      <!-- Change Master Password -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
+        <h4 class="text-sm font-bold text-white">تغيير كلمة المرور الرئيسية للخزنة</h4>
+        <p class="text-xs text-slate-400">سيتم إعادة تشفير جميع الصور والبيانات المحفوظة بالمفتاح الجديد تلقائياً.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <input
+            id="newMasterPwdInput"
+            type="password"
+            placeholder="كلمة المرور الجديدة..."
+            class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+          />
+          <button
+            type="button"
+            id="changeMasterPwdBtn"
+            class="py-2 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition"
+          >
+            تحديث كلمة المرور وإعادة التشفير
+          </button>
+        </div>
+      </div>
+
+      <!-- Optional Encrypted Cloud Sync to GitHub Repo -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-sky-500/30 space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-bold text-white">مزامنة النسخة المشفرة مباشرة مع GitHub (اختياري ومجاني)</h4>
+          <span class="px-2 py-0.5 text-[10px] rounded bg-sky-500/20 text-sky-300 font-semibold">GitHub REST API</span>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          تگدر تربط الموقع بمستودعك على GitHub بحيث يرفع ملف الخزنة المشفر (`vault-backup.vault`) مباشرة لحسابك بضغطة زر ويسترجعه متى ما تريد. (ملاحظة: GitHub API يقبل ملفات حتى 50MB للطلب الواحد؛ للأحجام الأكبر استخدم تحميل ملف `.vault` المحلي).
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div>
+            <label for="ghRepoInput" class="block text-[11px] text-slate-400 mb-1">اسم المستودع (مثال: `username/my-vault`)</label>
+            <input
+              id="ghRepoInput"
+              type="text"
+              placeholder="username/repo"
+              dir="ltr"
+              class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white font-mono outline-none focus:border-sky-500"
+            />
+          </div>
+          <div>
+            <label for="ghPathInput" class="block text-[11px] text-slate-400 mb-1">اسم ملف الحفظ في المستودع</label>
+            <input
+              id="ghPathInput"
+              type="text"
+              value="backups/my-photos.vault"
+              dir="ltr"
+              class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white font-mono outline-none focus:border-sky-500"
+            />
+          </div>
+        </div>
+        <div>
+          <label for="ghTokenInput" class="block text-[11px] text-slate-400 mb-1">رمز الوصول الشخصي (GitHub Personal Access Token - صلاحية repo/contents)</label>
+          <input
+            id="ghTokenInput"
+            type="password"
+            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+            dir="ltr"
+            class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-white font-mono outline-none focus:border-sky-500"
+          />
+        </div>
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button
+            type="button"
+            id="saveGhConfigBtn"
+            class="py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-white transition"
+          >
+            حفظ الإعدادات
+          </button>
+          <button
+            type="button"
+            id="pushToGhBtn"
+            class="py-2 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white transition"
+          >
+            ☁️ رفع النسخة المشفرة إلى GitHub
+          </button>
+          <button
+            type="button"
+            id="pullFromGhBtn"
+            class="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition"
+          >
+            ⬇️ استرجاع النسخة من GitHub
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 4: GITHUB PAGES DEPLOYMENT GUIDE                    -->
+  <!-- ========================================================= -->
+  <div id="guideModal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-modal w-full max-w-xl rounded-3xl p-6 sm:p-7 shadow-2xl my-8 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-white">طريقة رفع هذا الموقع على GitHub Pages مجاناً</h3>
+        <button type="button" id="closeGuideModalBtn" class="text-slate-400 hover:text-white p-1.5 rounded-lg bg-slate-800">✕</button>
+      </div>
+      <ol class="space-y-3 text-xs sm:text-sm text-slate-300 list-decimal list-inside leading-relaxed">
+        <li>حمّل ملف هذا التطبيق وسمِّه <code class="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono">index.html</code>.</li>
+        <li>ادخل لحسابك في <strong>GitHub</strong> وأنشئ مستودع جديد (New Repository) وارفع بداخله ملف <code class="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono">index.html</code>.</li>
+        <li>من إعدادات المستودع (<strong>Settings</strong>) ادخل لقسم <strong>Pages</strong> من القائمة الجانبية.</li>
+        <li>تحت خيار <strong>Branch</strong> اختر <code class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-mono">main</code> واضغط <strong>Save</strong>.</li>
+        <li>خلال دقيقة سيصبح موقعك جاهزاً على رابطك الخاص، وكل صورة ترفعها تُشفر بـ <strong>AES-256</strong> وتنحفظ في متصفحك، وتگدر تحفظها بملف <code class="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono">.vault</code> أو <code class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-mono">.zip</code> وتسترجعها بأي وقت!</li>
+      </ol>
+      <div class="pt-2 flex justify-end">
+        <button type="button" id="gotItGuideBtn" class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold">واضح، شكراً!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 5: CREATE NEW ALBUM OR PASSWORD PROMPT FOR IMPORT   -->
+  <!-- ========================================================= -->
+  <div id="customPromptModal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="glass-modal w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+      <h4 id="promptModalTitle" class="text-base font-bold text-white">إدخال مطلوب</h4>
+      <p id="promptModalDesc" class="text-xs text-slate-400"></p>
+      <input
+        id="promptModalInput"
+        type="text"
+        class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-emerald-500 px-3.5 py-2.5 text-sm text-white outline-none"
+      />
+      <div class="flex justify-end gap-2">
+        <button type="button" id="promptModalCancelBtn" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 font-semibold">إلغاء</button>
+        <button type="button" id="promptModalConfirmBtn" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-xs text-white font-bold">تأكيد</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- APPLICATION LOGIC (HIGH-SCALE BINARY AES-256 + INDEXEDDB) -->
+  <!-- ========================================================= -->
+  <script>
+    // --- STATE & HIGH-CAPACITY STORAGE ENGINE ---
+    const DB_NAME = 'AymenEncryptedPhotoVaultDB';
+    const DB_VERSION = 2; // Upgraded to v2 to add separate binary blob store for 1000+ photos
+    const STORE_META = 'vault_meta';
+    const STORE_PHOTOS = 'vault_photos'; // Stores encrypted lightweight metadata + thumbnail
+    const STORE_BLOBS = 'vault_blobs';   // Stores encrypted full-res binary ArrayBuffer
+
+    const PAGE_SIZE = 60; // Pagination size to keep DOM fast even with 5,000+ photos
+
+    let dbInstance = null;
+    // In-memory fallback ONLY used if IndexedDB is completely blocked by browser sandbox
+    let inMemoryFallback = { meta: {}, photos: {}, blobs: {} };
+    let currentCryptoKey = null;
+    let currentMasterPassword = '';
+    let currentSaltBase64 = '';
+    // unlockedPhotos holds lightweight metadata + small thumbnail (`thumbDataUrl`), NOT giant full-res strings!
+    let unlockedPhotos = [];
+    let albumsList = ['عام', 'شخصي', 'مستندات', 'سفر وذكريات'];
+    let activeAlbumFilter = 'ALL';
+    let currentPage = 1;
+    let selectedPhotoIds = new Set();
+    let currentLightboxId = null;
+    let currentLightboxObjectUrl = null;
+    let lightboxZoom = 1;
+    let lightboxRotation = 0;
+    let autoLockMinutes = 5;
+    let autoLockTimerId = null;
+    let batchCancelRequested = false;
+    let activePromptCleanup = null;
+
+    // --- UTILITY: TOAST MESSAGES ---
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      if (!container) return;
+      const el = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200',
+        error: 'bg-rose-950/95 border-rose-500/50 text-rose-200',
+        info: 'bg-slate-900/95 border-sky-500/50 text-sky-200'
+      };
+      el.className = `pointer-events-auto px-4 py-3 rounded-2xl border shadow-xl text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 transition-all duration-300 ${colors[type] || colors.info}`;
+      const span = document.createElement('span');
+      span.textContent = message;
+      el.appendChild(span);
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, 3600);
+    }
+
+    // --- UTILITY: BATCH PROGRESS MODAL ---
+    function showBatchProgress(title, current, total) {
+      const modal = document.getElementById('batchProgressModal');
+      const titleEl = document.getElementById('batchProgressTitle');
+      const pctEl = document.getElementById('batchProgressPercent');
+      const barEl = document.getElementById('batchProgressBar');
+      const detailEl = document.getElementById('batchProgressDetail');
+
+      modal.classList.remove('hidden');
+      titleEl.textContent = title;
+      const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+      pctEl.textContent = `${pct}%`;
+      barEl.style.width = `${pct}%`;
+      detailEl.textContent = `${current} / ${total}`;
+    }
+
+    function hideBatchProgress() {
+      document.getElementById('batchProgressModal').classList.add('hidden');
+      batchCancelRequested = false;
+    }
+
+    // --- UTILITY: CUSTOM PROMPT / CONFIRM MODAL (WITH ENTER & ESCAPE FIX) ---
+    function openCustomPrompt({ title, desc, placeholder = '', isPassword = false, showInput = true, confirmText = 'تأكيد' }) {
+      if (activePromptCleanup) {
+        activePromptCleanup(null);
+      }
+      return new Promise((resolve) => {
+        const modal = document.getElementById('customPromptModal');
+        const titleEl = document.getElementById('promptModalTitle');
+        const descEl = document.getElementById('promptModalDesc');
+        const inputEl = document.getElementById('promptModalInput');
+        const cancelBtn = document.getElementById('promptModalCancelBtn');
+        const confirmBtn = document.getElementById('promptModalConfirmBtn');
+
+        titleEl.textContent = title;
+        descEl.textContent = desc || '';
+        inputEl.value = '';
+        inputEl.placeholder = placeholder;
+        inputEl.type = isPassword ? 'password' : 'text';
+        inputEl.classList.toggle('hidden', !showInput);
+        confirmBtn.textContent = confirmText;
+        modal.classList.remove('hidden');
+        if (showInput) setTimeout(() => inputEl.focus(), 40);
+
+        function cleanup(result) {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          confirmBtn.removeEventListener('click', onConfirm);
+          inputEl.removeEventListener('keydown', onKeyDown);
+          activePromptCleanup = null;
+          resolve(result);
+        }
+        function onCancel() { cleanup(null); }
+        function onConfirm() { cleanup(showInput ? inputEl.value : true); }
+        function onKeyDown(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onConfirm();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }
+
+        activePromptCleanup = cleanup;
+        cancelBtn.addEventListener('click', onCancel);
+        confirmBtn.addEventListener('click', onConfirm);
+        inputEl.addEventListener('keydown', onKeyDown);
+      });
+    }
+
+    // --- INDEXEDDB LAYER (V2 WITH SEPARATE BINARY BLOB STORE & BATCH OPS) ---
+    function initDB() {
+      return new Promise((resolve) => {
+        try {
+          if (navigator.storage && navigator.storage.persist) {
+            navigator.storage.persist().catch(() => {});
+          }
+          if (!window.indexedDB) {
+            resolve(null);
+            return;
+          }
+          const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_META)) {
+              db.createObjectStore(STORE_META, { keyPath: 'key' });
+            }
+            if (!db.objectStoreNames.contains(STORE_PHOTOS)) {
+              db.createObjectStore(STORE_PHOTOS, { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains(STORE_BLOBS)) {
+              db.createObjectStore(STORE_BLOBS, { keyPath: 'id' });
+            }
+          };
+          req.onsuccess = (e) => {
+            dbInstance = e.target.result;
+            resolve(dbInstance);
+          };
+          req.onerror = () => resolve(null);
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    }
+
+    async function updateStorageQuotaUI() {
+      const el = document.getElementById('storageQuotaText');
+      if (!el) return;
+      try {
+        if (navigator.storage && navigator.storage.estimate) {
+          const est = await navigator.storage.estimate();
+          const usedMB = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
+          const quotaGB = ((est.quota || 0) / (1024 * 1024 * 1024)).toFixed(1);
+          el.textContent = `المستخدم حالياً: ${usedMB} MB من أصل ${quotaGB} GB متاحة في متصفحك`;
+        } else {
+          el.textContent = 'التخزين المحلي IndexedDB مفعل وجاهز لحفظ آلاف الصور.';
+        }
+      } catch (e) {
+        el.textContent = 'التخزين المحلي IndexedDB مفعل.';
+      }
+    }
+
+    function dbGetMeta(key) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          resolve(inMemoryFallback.meta[key] || null);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_META, 'readonly');
+          const req = tx.objectStore(STORE_META).get(key);
+          req.onsuccess = () => resolve(req.result ? req.result.value : null);
+          req.onerror = () => resolve(inMemoryFallback.meta[key] || null);
+        } catch (e) {
+          resolve(inMemoryFallback.meta[key] || null);
+        }
+      });
+    }
+
+    function dbSetMeta(key, value) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          inMemoryFallback.meta[key] = value;
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_META, 'readwrite');
+          tx.objectStore(STORE_META).put({ key, value });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => {
+            inMemoryFallback.meta[key] = value;
+            resolve(false);
+          };
+        } catch (e) {
+          inMemoryFallback.meta[key] = value;
+          resolve(false);
+        }
+      });
+    }
+
+    function dbGetPhotosCount() {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          resolve(Object.keys(inMemoryFallback.photos).length);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_PHOTOS, 'readonly');
+          const req = tx.objectStore(STORE_PHOTOS).count();
+          req.onsuccess = () => resolve(req.result || 0);
+          req.onerror = () => resolve(0);
+        } catch (e) {
+          resolve(0);
+        }
+      });
+    }
+
+    function dbGetAllEncryptedPhotos() {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          resolve(Object.values(inMemoryFallback.photos));
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_PHOTOS, 'readonly');
+          const req = tx.objectStore(STORE_PHOTOS).getAll();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => resolve(Object.values(inMemoryFallback.photos));
+        } catch (e) {
+          resolve(Object.values(inMemoryFallback.photos));
+        }
+      });
+    }
+
+    function dbPutEncryptedPhoto(record) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          inMemoryFallback.photos[record.id] = record;
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_PHOTOS, 'readwrite');
+          tx.objectStore(STORE_PHOTOS).put(record);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => {
+            inMemoryFallback.photos[record.id] = record;
+            resolve(false);
+          };
+        } catch (e) {
+          inMemoryFallback.photos[record.id] = record;
+          resolve(false);
+        }
+      });
+    }
+
+    function dbPutEncryptedBlob(id, blobRecord) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          inMemoryFallback.blobs[id] = blobRecord;
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_BLOBS, 'readwrite');
+          tx.objectStore(STORE_BLOBS).put({ id, ...blobRecord });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => {
+            inMemoryFallback.blobs[id] = { id, ...blobRecord };
+            resolve(false);
+          };
+        } catch (e) {
+          inMemoryFallback.blobs[id] = { id, ...blobRecord };
+          resolve(false);
+        }
+      });
+    }
+
+    // High-speed single-transaction batch write for uploading/restoring many photos at once
+    function dbPutBatch(photoRecords, blobRecords) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          photoRecords.forEach((r) => { inMemoryFallback.photos[r.id] = r; });
+          blobRecords.forEach((b) => { inMemoryFallback.blobs[b.id] = b; });
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction([STORE_PHOTOS, STORE_BLOBS], 'readwrite');
+          const pStore = tx.objectStore(STORE_PHOTOS);
+          const bStore = tx.objectStore(STORE_BLOBS);
+          photoRecords.forEach((r) => pStore.put(r));
+          blobRecords.forEach((b) => bStore.put(b));
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => {
+            photoRecords.forEach((r) => { inMemoryFallback.photos[r.id] = r; });
+            blobRecords.forEach((b) => { inMemoryFallback.blobs[b.id] = b; });
+            resolve(false);
+          };
+        } catch (e) {
+          photoRecords.forEach((r) => { inMemoryFallback.photos[r.id] = r; });
+          blobRecords.forEach((b) => { inMemoryFallback.blobs[b.id] = b; });
+          resolve(false);
+        }
+      });
+    }
+
+    function dbGetEncryptedBlob(id) {
+      return new Promise((resolve) => {
+        if (!dbInstance) {
+          resolve(inMemoryFallback.blobs[id] || null);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction(STORE_BLOBS, 'readonly');
+          const req = tx.objectStore(STORE_BLOBS).get(id);
+          req.onsuccess = () => resolve(req.result || inMemoryFallback.blobs[id] || null);
+          req.onerror = () => resolve(inMemoryFallback.blobs[id] || null);
+        } catch (e) {
+          resolve(inMemoryFallback.blobs[id] || null);
+        }
+      });
+    }
+
+    function dbDeletePhotosBatch(ids) {
+      return new Promise((resolve) => {
+        ids.forEach((id) => {
+          delete inMemoryFallback.photos[id];
+          delete inMemoryFallback.blobs[id];
+        });
+        if (!dbInstance) {
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction([STORE_PHOTOS, STORE_BLOBS], 'readwrite');
+          const pStore = tx.objectStore(STORE_PHOTOS);
+          const bStore = tx.objectStore(STORE_BLOBS);
+          ids.forEach((id) => {
+            pStore.delete(id);
+            bStore.delete(id);
+          });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (e) {
+          resolve(false);
+        }
+      });
+    }
+
+    function dbClearAll() {
+      return new Promise((resolve) => {
+        inMemoryFallback = { meta: {}, photos: {}, blobs: {} };
+        if (!dbInstance) {
+          resolve(true);
+          return;
+        }
+        try {
+          const tx = dbInstance.transaction([STORE_META, STORE_PHOTOS, STORE_BLOBS], 'readwrite');
+          tx.objectStore(STORE_META).clear();
+          tx.objectStore(STORE_PHOTOS).clear();
+          tx.objectStore(STORE_BLOBS).clear();
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (e) {
+          resolve(false);
+        }
+      });
+    }
+
+    // --- FAST CHUNKED BASE64 & BINARY WEB CRYPTO API (AES-256-GCM) ---
+    function bytesToBase64(bytes) {
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const CHUNK_SIZE = 0x8000; // 32KB chunks to avoid call stack overflow & O(N^2) string concat
+      const chunks = [];
+      for (let i = 0; i < u8.length; i += CHUNK_SIZE) {
+        chunks.push(String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK_SIZE)));
+      }
+      return window.btoa(chunks.join(''));
+    }
+
+    function base64ToBytes(base64) {
+      const binary = window.atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    async function deriveAesKey(password, saltBase64) {
+      const enc = new TextEncoder();
+      const keyMaterial = await window.crypto.subtle.importKey(
+        'raw',
+        enc.encode(password),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveKey']
+      );
+      const saltBytes = base64ToBytes(saltBase64);
+      return window.crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: saltBytes,
+          iterations: 100000,
+          hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    }
+
+    async function encryptJsonObject(obj, cryptoKey) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const encoded = new TextEncoder().encode(JSON.stringify(obj));
+      const cipherBuffer = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        encoded
+      );
+      return {
+        iv: bytesToBase64(iv),
+        ciphertext: bytesToBase64(new Uint8Array(cipherBuffer))
+      };
+    }
+
+    async function decryptJsonObject(encryptedPayload, cryptoKey) {
+      const iv = base64ToBytes(encryptedPayload.iv);
+      const cipherBytes = base64ToBytes(encryptedPayload.ciphertext);
+      const plainBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        cipherBytes
+      );
+      const decoded = new TextDecoder().decode(plainBuffer);
+      return JSON.parse(decoded);
+    }
+
+    // Native Binary Encryption (Zero Base64 overhead for full-resolution photos!)
+    async function encryptBinaryBuffer(arrayBuffer, cryptoKey) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const cipherBuffer = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        arrayBuffer
+      );
+      return { iv, cipherBuffer };
+    }
+
+    async function decryptBinaryBuffer(iv, cipherBuffer, cryptoKey) {
+      const ivBytes = iv instanceof Uint8Array ? iv : (typeof iv === 'string' ? base64ToBytes(iv) : new Uint8Array(iv));
+      const cipherData = cipherBuffer instanceof ArrayBuffer || ArrayBuffer.isView(cipherBuffer)
+        ? cipherBuffer
+        : base64ToBytes(cipherBuffer);
+      return window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: ivBytes },
+        cryptoKey,
+        cipherData
+      );
+    }
+
+    // Retrieve full-resolution Blob or DataURL on demand for a photo ID
+    async function getDecryptedPhotoBlob(photo) {
+      // Legacy v1 compatibility if photo still has full dataUrl in memory
+      if (photo.dataUrl) {
+        const res = await fetch(photo.dataUrl);
+        return res.blob();
+      }
+      const blobRecord = await dbGetEncryptedBlob(photo.id);
+      if (blobRecord && blobRecord.cipherBuffer) {
+        const plainBuffer = await decryptBinaryBuffer(blobRecord.iv, blobRecord.cipherBuffer, currentCryptoKey);
+        return new Blob([plainBuffer], { type: photo.mimeType || blobRecord.mimeType || 'image/jpeg' });
+      }
+      // Fallback to thumbnail if full blob missing
+      if (photo.thumbDataUrl) {
+        const res = await fetch(photo.thumbDataUrl);
+        return res.blob();
+      }
+      return null;
+    }
+
+    // --- CHECK VAULT STATE ON STARTUP ---
+    async function refreshLockScreenState() {
+      const verifier = await dbGetMeta('verifier');
+      const count = await dbGetPhotosCount();
+      const statusDot = document.getElementById('vaultStatusDot');
+      const statusText = document.getElementById('vaultStatusText');
+      const countBadge = document.getElementById('vaultCountBadge');
+      const confirmWrapper = document.getElementById('confirmPasswordWrapper');
+      const submitText = document.getElementById('authSubmitText');
+      const confirmInput = document.getElementById('confirmPasswordInput');
+
+      countBadge.textContent = `${count} صورة مشفرة`;
+
+      if (verifier && verifier.salt) {
+        statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+        statusText.textContent = 'تم العثور على خزنة مشفرة محفوظة في هذا المتصفح';
+        confirmWrapper.classList.add('hidden');
+        confirmInput.required = false;
+        submitText.textContent = 'فتح الخزنة المشفرة';
+      } else {
+        statusDot.className = 'w-2.5 h-2.5 rounded-full bg-sky-400';
+        statusText.textContent = 'خزنة جديدة — عيّن كلمة مرور رئيسية لتشفير صورك';
+        confirmWrapper.classList.remove('hidden');
+        confirmInput.required = true;
+        submitText.textContent = 'إنشاء الخزنة وتفعيل التشفير';
+      }
+    }
+
+    // --- UNLOCK OR INITIALIZE VAULT ---
+    async function handleAuthSubmit(e) {
+      e.preventDefault();
+      const pwdInput = document.getElementById('masterPasswordInput');
+      const confirmInput = document.getElementById('confirmPasswordInput');
+      const password = pwdInput.value;
+
+      if (!password || password.length < 4) {
+        showToast('يرجى إدخال كلمة مرور لا تقل عن 4 أحرف أو أرقام.', 'error');
+        return;
+      }
+
+      const verifier = await dbGetMeta('verifier');
+
+      if (!verifier || !verifier.salt) {
+        if (password !== confirmInput.value) {
+          showToast('كلمتا المرور غير متطابقتين، يرجى التأكد.', 'error');
+          return;
+        }
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+        const saltBase64 = bytesToBase64(saltBytes);
+        const key = await deriveAesKey(password, saltBase64);
+        const checkPayload = await encryptJsonObject({ check: 'VAULT_OK', created: Date.now() }, key);
+
+        await dbSetMeta('verifier', { salt: saltBase64, checkPayload });
+        await dbSetMeta('albums', albumsList);
+
+        currentCryptoKey = key;
+        currentMasterPassword = password;
+        currentSaltBase64 = saltBase64;
+        unlockedPhotos = [];
+        pwdInput.value = '';
+        confirmInput.value = '';
+        enterVaultDashboard();
+        showToast('تم إنشاء الخزنة وتفعيل تشفير AES-256 بنجاح!', 'success');
+      } else {
+        try {
+          const key = await deriveAesKey(password, verifier.salt);
+          const check = await decryptJsonObject(verifier.checkPayload, key);
+          if (!check || check.check !== 'VAULT_OK') {
+            throw new Error('Invalid verifier');
+          }
+          currentCryptoKey = key;
+          currentMasterPassword = password;
+          currentSaltBase64 = verifier.salt;
+
+          const savedAlbums = await dbGetMeta('albums');
+          if (Array.isArray(savedAlbums) && savedAlbums.length > 0) {
+            albumsList = savedAlbums;
+          }
+
+          const encryptedRecords = await dbGetAllEncryptedPhotos();
+          const total = encryptedRecords.length;
+          const decryptedList = [];
+
+          if (total > 100) {
+            showBatchProgress('جاري فك تشفير فهرس الصور...', 0, total);
+          }
+
+          for (let i = 0; i < total; i++) {
+            try {
+              const item = await decryptJsonObject(encryptedRecords[i].payload, key);
+              decryptedList.push(item);
+            } catch (decErr) {
+              // Skip corrupted record
+            }
+            if (total > 100 && i % 50 === 0) {
+              showBatchProgress('جاري فك تشفير فهرس الصور...', i, total);
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          }
+
+          hideBatchProgress();
+          unlockedPhotos = decryptedList;
+          pwdInput.value = '';
+          enterVaultDashboard();
+          showToast(`تم فك تشفير الخزنة بنجاح (${unlockedPhotos.length} صورة).`, 'success');
+        } catch (err) {
+          hideBatchProgress();
+          showToast('كلمة المرور غير صحيحة! لا يمكن فك تشفير الخزنة.', 'error');
+        }
+      }
+    }
+
+    function enterVaultDashboard() {
+      document.getElementById('authView').classList.add('hidden');
+      document.getElementById('vaultView').classList.remove('hidden');
+      syncAlbumSelects();
+      renderAlbumTabs();
+      renderPhotoGrid();
+      updateStorageQuotaUI();
+      resetAutoLockTimer();
+    }
+
+    function revokeLightboxObjectUrl() {
+      if (currentLightboxObjectUrl) {
+        URL.revokeObjectURL(currentLightboxObjectUrl);
+        currentLightboxObjectUrl = null;
+      }
+    }
+
+    function lockVaultNow() {
+      revokeLightboxObjectUrl();
+      currentCryptoKey = null;
+      currentMasterPassword = '';
+      unlockedPhotos = [];
+      selectedPhotoIds.clear();
+      closeAllModals();
+      document.getElementById('vaultView').classList.add('hidden');
+      document.getElementById('authView').classList.remove('hidden');
+      refreshLockScreenState();
+      showToast('تم قفل الخزنة ومسح المفاتيح من الذاكرة المؤقتة.', 'info');
+    }
+
+    function closeAllModals() {
+      if (activePromptCleanup) {
+        activePromptCleanup(null);
+      }
+      revokeLightboxObjectUrl();
+      ['backupModal', 'lightboxModal', 'settingsModal', 'guideModal', 'customPromptModal'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+    }
+
+    // --- AUTO-LOCK INACTIVITY TIMER ---
+    function resetAutoLockTimer() {
+      if (autoLockTimerId) clearTimeout(autoLockTimerId);
+      if (!currentCryptoKey || autoLockMinutes <= 0) return;
+      autoLockTimerId = setTimeout(() => {
+        if (currentCryptoKey) {
+          lockVaultNow();
+        }
+      }, autoLockMinutes * 60 * 1000);
+    }
+
+    ['mousemove', 'keydown', 'click', 'touchstart'].forEach((evt) => {
+      window.addEventListener(evt, () => {
+        if (currentCryptoKey) resetAutoLockTimer();
+      }, { passive: true });
+    });
+
+    // --- HIGH-PERFORMANCE IMAGE PROCESSING FOR 1,000+ PHOTOS ---
+    function isSupportedImageFile(file) {
+      if (!file) return false;
+      if (file.type && file.type.startsWith('image/')) return true;
+      return /\.(jpe?g|png|webp|gif|bmp|svg|avif|heic|heif|jfif)$/i.test(file.name || '');
+    }
+
+    async function processSingleFileToThumbnailAndBinary(file, shouldCompress) {
+      const mimeType = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+      const objUrl = URL.createObjectURL(file);
+
+      try {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = objUrl;
+        });
+
+        const w = img.naturalWidth || img.width || 800;
+        const h = img.naturalHeight || img.height || 600;
+
+        // 1. Always create a fast, lightweight 320px thumbnail (~10KB) for the grid
+        const thumbMax = 320;
+        let thumbW = w;
+        let thumbH = h;
+        if (w > thumbMax || h > thumbMax) {
+          if (w > h) {
+            thumbW = thumbMax;
+            thumbH = Math.max(1, Math.round((h * thumbMax) / w));
+          } else {
+            thumbH = thumbMax;
+            thumbW = Math.max(1, Math.round((w * thumbMax) / h));
+          }
+        }
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = thumbW;
+        thumbCanvas.height = thumbH;
+        const tCtx = thumbCanvas.getContext('2d');
+        tCtx.drawImage(img, 0, 0, thumbW, thumbH);
+        const thumbDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.72);
+
+        // 2. Full image binary ArrayBuffer (either original file bytes or smart-compressed JPEG)
+        if (!shouldCompress || mimeType === 'image/gif') {
+          const rawBuffer = await file.arrayBuffer();
+          return {
+            width: w,
+            height: h,
+            size: rawBuffer.byteLength,
+            mimeType,
+            thumbDataUrl,
+            fullBuffer: rawBuffer
+          };
+        }
+
+        const maxDim = 1920;
+        let targetW = w;
+        let targetH = h;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            targetW = maxDim;
+            targetH = Math.max(1, Math.round((h * maxDim) / w));
+          } else {
+            targetH = maxDim;
+            targetW = Math.max(1, Math.round((w * maxDim) / h));
+          }
+        }
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = targetW;
+        fullCanvas.height = targetH;
+        const fCtx = fullCanvas.getContext('2d');
+        fCtx.drawImage(img, 0, 0, targetW, targetH);
+
+        const compressedBlob = await new Promise((res) => fullCanvas.toBlob(res, 'image/jpeg', 0.82));
+        const compressedBuffer = await compressedBlob.arrayBuffer();
+
+        return {
+          width: targetW,
+          height: targetH,
+          size: compressedBuffer.byteLength,
+          mimeType: 'image/jpeg',
+          thumbDataUrl,
+          fullBuffer: compressedBuffer
+        };
+      } finally {
+        URL.revokeObjectURL(objUrl);
+      }
+    }
+
+    async function processUploadedFiles(fileList) {
+      if (!currentCryptoKey) {
+        showToast('يرجى فتح الخزنة أولاً.', 'error');
+        return;
+      }
+      const files = Array.from(fileList).filter(isSupportedImageFile);
+      if (files.length === 0) {
+        showToast('لم يتم العثور على ملفات صور صالحة في الاختيار.', 'error');
+        return;
+      }
+
+      const targetAlbum = document.getElementById('uploadAlbumSelect').value || 'عام';
+      const shouldCompress = document.getElementById('compressToggle').checked;
+      const total = files.length;
+      const BATCH_SIZE = 6; // Process 6 images in parallel per batch for maximum speed & low RAM
+
+      batchCancelRequested = false;
+      showBatchProgress('جاري تشفير وحفظ الصور في الخزنة...', 0, total);
+
+      let addedCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        if (batchCancelRequested) break;
+
+        const slice = files.slice(i, i + BATCH_SIZE);
+        const batchPhotoRecords = [];
+        const batchBlobRecords = [];
+        const batchUnlockedItems = [];
+
+        await Promise.all(
+          slice.map(async (file, idx) => {
+            try {
+              const processed = await processSingleFileToThumbnailAndBinary(file, shouldCompress);
+              const metaItem = {
+                id: 'img_' + Date.now() + '_' + (i + idx) + '_' + Math.random().toString(36).substring(2, 7),
+                name: (file.name || `photo_${i + idx + 1}`).replace(/\.[^/.]+$/, ''),
+                album: targetAlbum,
+                note: '',
+                fav: false,
+                createdAt: new Date().toISOString(),
+                size: processed.size,
+                width: processed.width,
+                height: processed.height,
+                mimeType: processed.mimeType,
+                thumbDataUrl: processed.thumbDataUrl
+              };
+
+              const [encMeta, encBlob] = await Promise.all([
+                encryptJsonObject(metaItem, currentCryptoKey),
+                encryptBinaryBuffer(processed.fullBuffer, currentCryptoKey)
+              ]);
+
+              batchPhotoRecords.push({ id: metaItem.id, payload: encMeta });
+              batchBlobRecords.push({
+                id: metaItem.id,
+                iv: encBlob.iv,
+                cipherBuffer: encBlob.cipherBuffer,
+                mimeType: processed.mimeType
+              });
+              batchUnlockedItems.push(metaItem);
+              addedCount++;
+            } catch (err) {
+              failedCount++;
+            }
+          })
+        );
+
+        if (batchPhotoRecords.length > 0) {
+          await dbPutBatch(batchPhotoRecords, batchBlobRecords);
+          for (const item of batchUnlockedItems) {
+            unlockedPhotos.unshift(item);
+          }
+        }
+
+        showBatchProgress('جاري تشفير وحفظ الصور في الخزنة...', Math.min(total, i + slice.length), total);
+        // Yield to UI thread so browser stays 100% responsive even on 1,000+ photos
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      hideBatchProgress();
+      currentPage = 1;
+      renderAlbumTabs();
+      renderPhotoGrid();
+      updateStorageQuotaUI();
+
+      if (batchCancelRequested) {
+        showToast(`تم إيقاف العملية بعد تشفير وحفظ ${addedCount} صورة.`, 'info');
+      } else if (failedCount > 0) {
+        showToast(`تم تشفير وحفظ ${addedCount} صورة بنجاح (تعذر قراءة ${failedCount} ملف غير مدعوم).`, 'info');
+      } else {
+        showToast(`تم تشفير وحفظ ${addedCount} صورة في الخزنة بنجاح!`, 'success');
+      }
+    }
+
+    // --- DEMO PHOTOS GENERATOR ---
+    async function generateDemoPhotos() {
+      if (!currentCryptoKey) return;
+      const demos = [
+        { title: 'بطاقة عملات رقمية ومحفظة تداول', album: 'مستندات', note: 'نسخة احتياطية لبيانات المحفظة المالية - سري للغاية', c1: '#064e3b', c2: '#0f172a', accent: '#10b981' },
+        { title: 'صورة جواز السفر والهوية الشخصية', album: 'شخصي', note: 'نسخة ملونة عالية الدقة للطوارئ والسفر', c1: '#1e3a8a', c2: '#090d16', accent: '#38bdf8' },
+        { title: 'غروب الشمس على نهر دجلة - الموصل', album: 'سفر وذكريات', note: 'التقطت خلال جولة مسائية في مدينة الموصل', c1: '#7c2d12', c2: '#111827', accent: '#fb923c' }
+      ];
+
+      const batchPhotos = [];
+      const batchBlobs = [];
+
+      for (const d of demos) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 960;
+        canvas.height = 600;
+        const ctx = canvas.getContext('2d');
+
+        const grad = ctx.createLinearGradient(0, 0, 960, 600);
+        grad.addColorStop(0, d.c1);
+        grad.addColorStop(1, d.c2);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 960, 600);
+
+        ctx.fillStyle = d.accent + '25';
+        ctx.beginPath();
+        ctx.arc(780, 150, 180, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(180, 460, 140, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = d.accent + '88';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(50, 50, 860, 500);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 34px Cairo, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(d.title, 480, 270);
+
+        ctx.fillStyle = d.accent;
+        ctx.font = '600 22px Cairo, sans-serif';
+        ctx.fillText(`ألبوم: ${d.album} • مشفر بـ AES-256-GCM`, 480, 330);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '18px Cairo, sans-serif';
+        ctx.fillText(d.note, 480, 385);
+
+        const fullBlob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.88));
+        const fullBuffer = await fullBlob.arrayBuffer();
+
+        // Thumbnail
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = 320;
+        thumbCanvas.height = 200;
+        thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, 320, 200);
+        const thumbDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.72);
+
+        const id = 'demo_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const photoItem = {
+          id,
+          name: d.title,
+          album: d.album,
+          note: d.note,
+          fav: true,
+          createdAt: new Date().toISOString(),
+          size: fullBuffer.byteLength,
+          width: 960,
+          height: 600,
+          mimeType: 'image/jpeg',
+          thumbDataUrl
+        };
+
+        const [encMeta, encBlob] = await Promise.all([
+          encryptJsonObject(photoItem, currentCryptoKey),
+          encryptBinaryBuffer(fullBuffer, currentCryptoKey)
+        ]);
+
+        batchPhotos.push({ id, payload: encMeta });
+        batchBlobs.push({ id, iv: encBlob.iv, cipherBuffer: encBlob.cipherBuffer, mimeType: 'image/jpeg' });
+        unlockedPhotos.unshift(photoItem);
+      }
+
+      await dbPutBatch(batchPhotos, batchBlobs);
+      renderAlbumTabs();
+      renderPhotoGrid();
+      updateStorageQuotaUI();
+      showToast('تم توليد وتشفير 3 صور تجريبية داخل الخزنة لتجربة الحفظ والاسترجاع!', 'success');
+    }
+
+    // --- ALBUMS & FILTERING ---
+    function syncAlbumSelects() {
+      const uploadSel = document.getElementById('uploadAlbumSelect');
+      const detailSel = document.getElementById('detailAlbumSelect');
+      if (uploadSel) {
+        const currentVal = uploadSel.value;
+        uploadSel.innerHTML = albumsList.map((a) => `<option value="${a}">📁 ألبوم: ${a}</option>`).join('');
+        if (albumsList.includes(currentVal)) uploadSel.value = currentVal;
+      }
+      if (detailSel) {
+        detailSel.innerHTML = albumsList.map((a) => `<option value="${a}">${a}</option>`).join('');
+      }
+    }
+
+    function renderAlbumTabs() {
+      const container = document.getElementById('albumTabsContainer');
+      if (!container) return;
+
+      const totalCount = unlockedPhotos.length;
+      const favCount = unlockedPhotos.filter((p) => p.fav).length;
+
+      const tabs = [
+        { key: 'ALL', label: `الكل (${totalCount})` },
+        { key: 'FAV', label: `★ المفضلة (${favCount})` },
+        ...albumsList.map((a) => {
+          const c = unlockedPhotos.filter((p) => p.album === a).length;
+          return { key: a, label: `${a} (${c})` };
+        })
+      ];
+
+      container.innerHTML = '';
+      tabs.forEach((t) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const isActive = activeAlbumFilter === t.key;
+        btn.className = `px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+          isActive
+            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-950'
+            : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+        }`;
+        btn.textContent = t.label;
+        btn.addEventListener('click', () => {
+          activeAlbumFilter = t.key;
+          currentPage = 1;
+          renderAlbumTabs();
+          renderPhotoGrid();
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function getFilteredAndSortedPhotos() {
+      const query = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
+      const sortBy = document.getElementById('sortSelect')?.value || 'newest';
+
+      const list = unlockedPhotos.filter((p) => {
+        if (activeAlbumFilter === 'FAV' && !p.fav) return false;
+        if (activeAlbumFilter !== 'ALL' && activeAlbumFilter !== 'FAV' && p.album !== activeAlbumFilter) return false;
+        if (query) {
+          const inName = (p.name || '').toLowerCase().includes(query);
+          const inNote = (p.note || '').toLowerCase().includes(query);
+          const inAlbum = (p.album || '').toLowerCase().includes(query);
+          if (!inName && !inNote && !inAlbum) return false;
+        }
+        return true;
+      });
+
+      list.sort((a, b) => {
+        if (sortBy === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
+        if (sortBy === 'largest') return (b.size || 0) - (a.size || 0);
+        if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '', 'ar');
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      return list;
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return '0 KB';
+      const gb = bytes / (1024 * 1024 * 1024);
+      if (gb >= 1) return `${gb.toFixed(2)} GB`;
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1) return `${mb.toFixed(2)} MB`;
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    // --- RENDER PHOTO GRID (PAGINATED FOR 1,000+ PHOTOS) ---
+    function renderPhotoGrid() {
+      const grid = document.getElementById('photoGrid');
+      const emptyState = document.getElementById('emptyVaultState');
+      const headerStats = document.getElementById('headerStatsText');
+      const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+      const selectedCountSpan = document.getElementById('selectedCountSpan');
+      const paginationBar = document.getElementById('paginationBar');
+      const paginationInfoText = document.getElementById('paginationInfoText');
+      const pageIndicatorText = document.getElementById('pageIndicatorText');
+      const prevPageBtn = document.getElementById('prevPageBtn');
+      const nextPageBtn = document.getElementById('nextPageBtn');
+
+      const totalBytes = unlockedPhotos.reduce((acc, p) => acc + (p.size || 0), 0);
+      if (headerStats) {
+        headerStats.textContent = `${unlockedPhotos.length} صورة مشفرة • ${formatBytes(totalBytes)} محفوظة بأمان`;
+      }
+
+      if (selectedPhotoIds.size > 0) {
+        deleteSelectedBtn.classList.remove('hidden');
+        selectedCountSpan.textContent = selectedPhotoIds.size;
+      } else {
+        deleteSelectedBtn.classList.add('hidden');
+      }
+
+      const filtered = getFilteredAndSortedPhotos();
+      grid.innerHTML = '';
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        paginationBar.classList.add('hidden');
+        return;
+      }
+      emptyState.classList.add('hidden');
+
+      const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      const startIdx = (currentPage - 1) * PAGE_SIZE;
+      const endIdx = Math.min(filtered.length, startIdx + PAGE_SIZE);
+      const pageItems = filtered.slice(startIdx, endIdx);
+
+      if (filtered.length > PAGE_SIZE) {
+        paginationBar.classList.remove('hidden');
+        paginationInfoText.textContent = `عرض ${startIdx + 1} - ${endIdx} من أصل ${filtered.length} صورة`;
+        pageIndicatorText.textContent = `${currentPage} / ${totalPages}`;
+        prevPageBtn.disabled = currentPage <= 1;
+        nextPageBtn.disabled = currentPage >= totalPages;
+      } else {
+        paginationBar.classList.add('hidden');
+      }
+
+      const fragment = document.createDocumentFragment();
+
+      pageItems.forEach((photo) => {
+        const isSelected = selectedPhotoIds.has(photo.id);
+        const card = document.createElement('div');
+        card.className = `photo-card glass-card rounded-2xl overflow-hidden flex flex-col justify-between transition group border ${
+          isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-slate-800 hover:border-slate-600'
+        }`;
+
+        const thumbWrapper = document.createElement('div');
+        thumbWrapper.className = 'relative h-48 bg-slate-950 overflow-hidden cursor-pointer';
+
+        const img = document.createElement('img');
+        img.src = photo.thumbDataUrl || photo.dataUrl || '';
+        img.alt = photo.name;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.className = 'w-full h-full object-cover group-hover:scale-105 transition duration-300';
+        img.addEventListener('click', () => openLightbox(photo.id));
+
+        const topBar = document.createElement('div');
+        topBar.className = 'absolute top-2.5 inset-x-2.5 flex items-center justify-between z-10';
+
+        const selectCheck = document.createElement('button');
+        selectCheck.type = 'button';
+        selectCheck.className = `w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border transition ${
+          isSelected
+            ? 'bg-emerald-500 border-emerald-400 text-white'
+            : 'bg-slate-900/80 border-slate-600 text-transparent hover:border-emerald-400'
+        }`;
+        selectCheck.textContent = '✓';
+        selectCheck.title = 'تحديد الصورة';
+        selectCheck.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (selectedPhotoIds.has(photo.id)) selectedPhotoIds.delete(photo.id);
+          else selectedPhotoIds.add(photo.id);
+          renderPhotoGrid();
+        });
+
+        const favBtn = document.createElement('button');
+        favBtn.type = 'button';
+        favBtn.className = `w-7 h-7 rounded-lg bg-slate-900/80 border border-slate-700 flex items-center justify-center text-sm transition ${
+          photo.fav ? 'text-amber-400' : 'text-slate-400 hover:text-amber-300'
+        }`;
+        favBtn.textContent = photo.fav ? '★' : '☆';
+        favBtn.title = 'المفضلة';
+        favBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          photo.fav = !photo.fav;
+          const enc = await encryptJsonObject(photo, currentCryptoKey);
+          await dbPutEncryptedPhoto({ id: photo.id, payload: enc });
+          renderAlbumTabs();
+          renderPhotoGrid();
+        });
+
+        topBar.appendChild(selectCheck);
+        topBar.appendChild(favBtn);
+
+        thumbWrapper.appendChild(img);
+        thumbWrapper.appendChild(topBar);
+
+        const infoBox = document.createElement('div');
+        infoBox.className = 'p-3.5 flex flex-col gap-1.5';
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'flex items-center justify-between gap-2';
+        const nameEl = document.createElement('h4');
+        nameEl.className = 'text-xs sm:text-sm font-bold text-white truncate cursor-pointer hover:text-emerald-400';
+        nameEl.textContent = photo.name || 'صورة بدون عنوان';
+        nameEl.addEventListener('click', () => openLightbox(photo.id));
+
+        const albumBadge = document.createElement('span');
+        albumBadge.className = 'px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-semibold shrink-0';
+        albumBadge.textContent = photo.album || 'عام';
+
+        titleRow.appendChild(nameEl);
+        titleRow.appendChild(albumBadge);
+
+        const metaRow = document.createElement('div');
+        metaRow.className = 'flex items-center justify-between text-[11px] text-slate-400';
+        const dateStr = new Date(photo.createdAt).toLocaleDateString('ar-IQ', { month: 'short', day: 'numeric', year: 'numeric' });
+        metaRow.innerHTML = `<span>${dateStr}</span><span class="font-mono">${formatBytes(photo.size)}</span>`;
+
+        infoBox.appendChild(titleRow);
+        if (photo.note) {
+          const notePreview = document.createElement('p');
+          notePreview.className = 'text-[11px] text-slate-400 truncate';
+          notePreview.textContent = photo.note;
+          infoBox.appendChild(notePreview);
+        }
+        infoBox.appendChild(metaRow);
+
+        card.appendChild(thumbWrapper);
+        card.appendChild(infoBox);
+        fragment.appendChild(card);
+      });
+
+      grid.appendChild(fragment);
+    }
+
+    // --- LIGHTBOX VIEWER & PHOTO EDITOR (ON-DEMAND BINARY DECRYPTION) ---
+    async function openLightbox(photoId) {
+      const photo = unlockedPhotos.find((p) => p.id === photoId);
+      if (!photo) return;
+      currentLightboxId = photoId;
+      lightboxZoom = 1;
+      lightboxRotation = 0;
+
+      const filtered = getFilteredAndSortedPhotos();
+      const idx = filtered.findIndex((p) => p.id === photoId);
+
+      const imgEl = document.getElementById('lightboxImg');
+      // Show thumbnail immediately, then swap in full-res decrypted Blob
+      imgEl.src = photo.thumbDataUrl || photo.dataUrl || '';
+      updateLightboxTransform();
+
+      document.getElementById('lightboxDimensionsText').textContent = `${photo.width || '--'} × ${photo.height || '--'} px`;
+      document.getElementById('lightboxIndexText').textContent = `${idx + 1} / ${filtered.length}`;
+      document.getElementById('detailNameInput').value = photo.name || '';
+      syncAlbumSelects();
+      document.getElementById('detailAlbumSelect').value = photo.album || 'عام';
+      document.getElementById('detailNoteInput').value = photo.note || '';
+      document.getElementById('detailSizeText').textContent = formatBytes(photo.size);
+      document.getElementById('detailDateText').textContent = new Date(photo.createdAt).toLocaleString('ar-IQ');
+
+      updateDetailFavUI(photo.fav);
+      document.getElementById('lightboxModal').classList.remove('hidden');
+
+      // Decrypt full resolution image asynchronously
+      try {
+        const fullBlob = await getDecryptedPhotoBlob(photo);
+        if (fullBlob && currentLightboxId === photoId) {
+          revokeLightboxObjectUrl();
+          currentLightboxObjectUrl = URL.createObjectURL(fullBlob);
+          imgEl.src = currentLightboxObjectUrl;
+        }
+      } catch (e) {
+        // Keep thumbnail shown if blob decryption fails
+      }
+    }
+
+    function updateDetailFavUI(isFav) {
+      document.getElementById('detailFavStar').textContent = isFav ? '★' : '☆';
+      document.getElementById('detailFavStar').className = isFav ? 'text-amber-400' : 'text-slate-400';
+      document.getElementById('detailFavLabel').textContent = isFav ? 'في المفضلة' : 'إضافة للمفضلة';
+    }
+
+    function updateLightboxTransform() {
+      const imgEl = document.getElementById('lightboxImg');
+      imgEl.style.transform = `scale(${lightboxZoom}) rotate(${lightboxRotation}deg)`;
+    }
+
+    function navigateLightbox(direction) {
+      const filtered = getFilteredAndSortedPhotos();
+      if (filtered.length <= 1) return;
+      const idx = filtered.findIndex((p) => p.id === currentLightboxId);
+      if (idx === -1) return;
+      const nextIdx = (idx + direction + filtered.length) % filtered.length;
+      openLightbox(filtered[nextIdx].id);
+    }
+
+    // --- HIGH-SCALE STREAMED BACKUP EXPORT (.VAULT CHUNKED & .ZIP ARCHIVE) ---
+    // Builds a multi-part Blob without ever creating a single giant JS string, supporting 1,000+ photos (Multi-GB)!
+    async function exportEncryptedVaultFile() {
+      if (unlockedPhotos.length === 0) {
+        showToast('الخزنة فارغة حالياً! ارفع صورة واحدة على الأقل قبل التصدير.', 'error');
+        return;
+      }
+
+      const total = unlockedPhotos.length;
+      batchCancelRequested = false;
+      showBatchProgress('جاري تجهيز وتشفير ملف الخزنة (.vault)...', 0, total);
+
+      try {
+        const verifier = await dbGetMeta('verifier');
+        const headerObj = {
+          format: 'AYMEN_ENCRYPTED_PHOTO_VAULT_STREAM',
+          version: '3.0',
+          exportedAt: new Date().toISOString(),
+          photoCount: total,
+          salt: currentSaltBase64,
+          verifier: verifier ? verifier.checkPayload : null,
+          albums: albumsList
+        };
+
+        // Blob parts array: each line is an independent JSON chunk (NDJSON)
+        const blobParts = [JSON.stringify(headerObj) + '\n'];
+
+        for (let i = 0; i < total; i++) {
+          if (batchCancelRequested) {
+            hideBatchProgress();
+            showToast('تم إلغاء تصدير ملف الخزنة.', 'info');
+            return;
+          }
+
+          const p = unlockedPhotos[i];
+          const encMeta = await encryptJsonObject(p, currentCryptoKey);
+          let blobIvB64 = null;
+          let blobCipherB64 = null;
+
+          const blobRec = await dbGetEncryptedBlob(p.id);
+          if (blobRec && blobRec.cipherBuffer) {
+            blobIvB64 = typeof blobRec.iv === 'string' ? blobRec.iv : bytesToBase64(blobRec.iv);
+            blobCipherB64 = typeof blobRec.cipherBuffer === 'string'
+              ? blobRec.cipherBuffer
+              : bytesToBase64(new Uint8Array(blobRec.cipherBuffer));
+          }
+
+          const lineRecord = JSON.stringify({
+            id: p.id,
+            metaPayload: encMeta,
+            blobIv: blobIvB64,
+            blobCipher: blobCipherB64,
+            mimeType: p.mimeType || 'image/jpeg'
+          }) + '\n';
+
+          blobParts.push(lineRecord);
+
+          if (i % 10 === 0 || i === total - 1) {
+            showBatchProgress('جاري تجهيز وتشفير ملف الخزنة (.vault)...', i + 1, total);
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
+
+        const finalBlob = new Blob(blobParts, { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(finalBlob);
+        const a = document.createElement('a');
+        const dateTag = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `photo-vault-backup-${dateTag}.vault`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        hideBatchProgress();
+        showToast(`تم تحميل ملف الخزنة المشفر (.vault) لعدد ${total} صورة بنجاح!`, 'success');
+      } catch (err) {
+        hideBatchProgress();
+        showToast('حدث خطأ أثناء تصدير ملف الخزنة.', 'error');
+      }
+    }
+
+    async function exportStandardZipFile() {
+      if (unlockedPhotos.length === 0) {
+        showToast('الخزنة فارغة حالياً! ارفع صوراً أولاً.', 'error');
+        return;
+      }
+      if (typeof window.JSZip === 'undefined') {
+        showToast('مكتبة JSZip غير محملة حالياً، يمكنك استخدام ملف .vault المشفر.', 'error');
+        return;
+      }
+
+      const total = unlockedPhotos.length;
+      batchCancelRequested = false;
+      showBatchProgress('جاري فك تشفير الصور وتجهيز ملف الـ ZIP...', 0, total);
+
+      try {
+        const zip = new window.JSZip();
+        const metadataArray = [];
+
+        for (let i = 0; i < total; i++) {
+          if (batchCancelRequested) {
+            hideBatchProgress();
+            showToast('تم إلغاء تصدير ملف الـ ZIP.', 'info');
+            return;
+          }
+
+          const p = unlockedPhotos[i];
+          const blob = await getDecryptedPhotoBlob(p);
+          if (!blob) continue;
+
+          const mime = p.mimeType || blob.type || 'image/jpeg';
+          const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('gif') ? 'gif' : 'jpg';
+          const safeAlbum = (p.album || 'عام').replace(/[\\/:*?"<>|]/g, '_');
+          const safeName = (p.name || `photo_${i + 1}`).replace(/[\\/:*?"<>|]/g, '_');
+          const filePath = `${safeAlbum}/${safeName}_${i + 1}.${ext}`;
+
+          // Use STORE (no redundant DEFLATE compression on already-compressed images) -> 10x faster!
+          zip.file(filePath, blob, { compression: 'STORE' });
+          metadataArray.push({
+            id: p.id,
+            name: p.name,
+            album: p.album,
+            note: p.note,
+            fav: p.fav,
+            createdAt: p.createdAt,
+            width: p.width,
+            height: p.height,
+            mimeType: mime,
+            zipPath: filePath
+          });
+
+          if (i % 10 === 0 || i === total - 1) {
+            showBatchProgress('جاري فك تشفير الصور وتجهيز ملف الـ ZIP...', i + 1, total);
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
+
+        zip.file('vault-metadata.json', JSON.stringify({ albums: albumsList, photos: metadataArray }, null, 2));
+        showBatchProgress('جاري بناء ملف الـ ZIP النهائي...', total, total);
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        const dateTag = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `my-photos-archive-${dateTag}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        hideBatchProgress();
+        showToast(`تم تحميل أرشيف الصور (.zip) لعدد ${total} صورة بنجاح!`, 'success');
+      } catch (err) {
+        hideBatchProgress();
+        showToast('تعذر إنشاء ملف الـ ZIP.', 'error');
+      }
+    }
+
+    // --- RESTORE / IMPORT FROM .VAULT (STREAMED V3 OR LEGACY V2) OR .ZIP ---
+    async function handleBackupRestoreFile(file) {
+      if (!file) return;
+      const fileName = file.name.toLowerCase();
+
+      // Case 1: .zip archive
+      if (fileName.endsWith('.zip')) {
+        if (typeof window.JSZip === 'undefined') {
+          showToast('مكتبة قراءة ZIP غير متوفرة حالياً.', 'error');
+          return;
+        }
+        if (!currentCryptoKey) {
+          const pwd = await openCustomPrompt({
+            title: 'أدخل كلمة مرور لتشفير الصور المسترجعة',
+            desc: 'يرجى إدخال كلمة المرور لفتح الخزنة أو إنشاء خزنة جديدة للصور المسترجعة من ملف الـ ZIP:',
+            placeholder: 'كلمة المرور...',
+            isPassword: true
+          });
+          if (!pwd || pwd.length < 4) {
+            showToast('تم إلغاء الاسترجاع؛ كلمة المرور مطلوبة.', 'error');
+            return;
+          }
+          await ensureVaultUnlockedWithPassword(pwd);
+          if (!currentCryptoKey) return;
+        }
+
+        try {
+          const zip = await window.JSZip.loadAsync(file);
+          let metaMap = {};
+          if (zip.files['vault-metadata.json']) {
+            const metaText = await zip.files['vault-metadata.json'].async('string');
+            const parsedMeta = JSON.parse(metaText);
+            if (Array.isArray(parsedMeta.albums)) {
+              parsedMeta.albums.forEach((a) => {
+                if (!albumsList.includes(a)) albumsList.push(a);
+              });
+              await dbSetMeta('albums', albumsList);
+            }
+            if (Array.isArray(parsedMeta.photos)) {
+              parsedMeta.photos.forEach((m) => {
+                if (m.zipPath) metaMap[m.zipPath] = m;
+              });
+            }
+          }
+
+          const entries = Object.keys(zip.files).filter((relPath) => {
+            const zf = zip.files[relPath];
+            return !zf.dir && relPath !== 'vault-metadata.json' && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(relPath);
+          });
+
+          const total = entries.length;
+          batchCancelRequested = false;
+          showBatchProgress('جاري استرجاع وتشفير الصور من ملف الـ ZIP...', 0, total);
+
+          let restoredCount = 0;
+          for (let i = 0; i < total; i++) {
+            if (batchCancelRequested) break;
+            const relativePath = entries[i];
+            const zipEntry = zip.files[relativePath];
+            try {
+              const arrayBuffer = await zipEntry.async('arraybuffer');
+              const ext = relativePath.split('.').pop().toLowerCase();
+              const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+              const blob = new Blob([arrayBuffer], { type: mime });
+              const fileLike = new File([blob], relativePath.split('/').pop(), { type: mime });
+              const processed = await processSingleFileToThumbnailAndBinary(fileLike, false);
+
+              const metaInfo = metaMap[relativePath] || {};
+              const parts = relativePath.split('/');
+              const inferredAlbum = parts.length > 1 ? parts[0] : 'عام';
+              const inferredName = parts[parts.length - 1].replace(/\.[^/.]+$/, '').replace(/_\d+$/, '');
+
+              const targetAlbum = metaInfo.album || inferredAlbum;
+              if (!albumsList.includes(targetAlbum)) albumsList.push(targetAlbum);
+
+              const id = metaInfo.id || (`zip_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 7)}`);
+              const photoObj = {
+                id,
+                name: metaInfo.name || inferredName,
+                album: targetAlbum,
+                note: metaInfo.note || '',
+                fav: Boolean(metaInfo.fav),
+                createdAt: metaInfo.createdAt || new Date().toISOString(),
+                size: processed.size,
+                width: processed.width,
+                height: processed.height,
+                mimeType: mime,
+                thumbDataUrl: processed.thumbDataUrl
+              };
+
+              const [encMeta, encBlob] = await Promise.all([
+                encryptJsonObject(photoObj, currentCryptoKey),
+                encryptBinaryBuffer(processed.fullBuffer, currentCryptoKey)
+              ]);
+
+              await dbPutBatch(
+                [{ id, payload: encMeta }],
+                [{ id, iv: encBlob.iv, cipherBuffer: encBlob.cipherBuffer, mimeType: mime }]
+              );
+
+              const existingIdx = unlockedPhotos.findIndex((p) => p.id === id);
+              if (existingIdx !== -1) unlockedPhotos[existingIdx] = photoObj;
+              else unlockedPhotos.unshift(photoObj);
+              restoredCount++;
+            } catch (e) {
+              // continue next entry
+            }
+
+            if (i % 5 === 0 || i === total - 1) {
+              showBatchProgress('جاري استرجاع وتشفير الصور من ملف الـ ZIP...', i + 1, total);
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          }
+
+          hideBatchProgress();
+          await dbSetMeta('albums', albumsList);
+          enterVaultDashboard();
+          closeAllModals();
+          showToast(`تم استرجاع ${restoredCount} صورة من ملف الـ ZIP وتشفيرها بنجاح!`, 'success');
+        } catch (err) {
+          hideBatchProgress();
+          showToast('تعذر قراءة ملف الـ ZIP. تأكد من سلامة الملف.', 'error');
+        }
+        return;
+      }
+
+      // Case 2: Streamed V3 .vault (NDJSON) or Legacy V2 JSON .vault
+      try {
+        // Peek first 4KB to check header format without loading multi-GB file into memory at once
+        const headSlice = await file.slice(0, 4096).text();
+        const firstNewline = headSlice.indexOf('\n');
+        const firstLine = firstNewline !== -1 ? headSlice.slice(0, firstNewline).trim() : headSlice.trim();
+
+        if (firstLine.includes('AYMEN_ENCRYPTED_PHOTO_VAULT_STREAM')) {
+          await restoreFromStreamedVaultFile(file);
+          return;
+        }
+
+        // Legacy V2 single JSON object
+        const text = await file.text();
+        const pkg = JSON.parse(text);
+        if (!pkg || pkg.format !== 'AYMEN_ENCRYPTED_PHOTO_VAULT' || !Array.isArray(pkg.photos)) {
+          showToast('صيغة الملف غير مدعومة. يرجى اختيار ملف .vault أو .zip صحيح.', 'error');
+          return;
+        }
+        await restoreFromVaultPackageObject(pkg);
+      } catch (err) {
+        hideBatchProgress();
+        showToast('تعذر قراءة ملف النسخة الاحتياطية.', 'error');
+      }
+    }
+
+    // Stream-reads a multi-GB .vault file in 8MB slices so it never hits string limits
+    async function restoreFromStreamedVaultFile(file) {
+      const SLICE_SIZE = 8 * 1024 * 1024; // 8MB slice
+      let offset = 0;
+      let leftover = '';
+      let header = null;
+      let decryptKey = null;
+      let restoredCount = 0;
+      let processedLines = 0;
+      const decoder = new TextDecoder();
+
+      batchCancelRequested = false;
+
+      while (offset < file.size) {
+        if (batchCancelRequested) break;
+        const chunkBuffer = await file.slice(offset, offset + SLICE_SIZE).arrayBuffer();
+        offset += chunkBuffer.byteLength;
+        const textChunk = leftover + decoder.decode(chunkBuffer, { stream: offset < file.size });
+        const lines = textChunk.split('\n');
+        leftover = offset < file.size ? lines.pop() : '';
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+
+          if (!header) {
+            header = JSON.parse(line);
+            decryptKey = await resolveVaultDecryptionKey(header);
+            if (!decryptKey) {
+              hideBatchProgress();
+              return;
+            }
+            if (Array.isArray(header.albums)) {
+              header.albums.forEach((a) => {
+                if (!albumsList.includes(a)) albumsList.push(a);
+              });
+              await dbSetMeta('albums', albumsList);
+            }
+            showBatchProgress('جاري استرجاع الصور المشفرة من ملف .vault...', 0, header.photoCount || 100);
+            continue;
+          }
+
+          try {
+            const rec = JSON.parse(line);
+            const decryptedMeta = await decryptJsonObject(rec.metaPayload, decryptKey);
+            const reEncMeta = await encryptJsonObject(decryptedMeta, currentCryptoKey);
+
+            const batchPhotos = [{ id: decryptedMeta.id, payload: reEncMeta }];
+            const batchBlobs = [];
+
+            if (rec.blobIv && rec.blobCipher) {
+              const plainBinary = await decryptBinaryBuffer(rec.blobIv, rec.blobCipher, decryptKey);
+              const reEncBlob = await encryptBinaryBuffer(plainBinary, currentCryptoKey);
+              batchBlobs.push({
+                id: decryptedMeta.id,
+                iv: reEncBlob.iv,
+                cipherBuffer: reEncBlob.cipherBuffer,
+                mimeType: rec.mimeType || decryptedMeta.mimeType || 'image/jpeg'
+              });
+            }
+
+            await dbPutBatch(batchPhotos, batchBlobs);
+            const existingIdx = unlockedPhotos.findIndex((p) => p.id === decryptedMeta.id);
+            if (existingIdx !== -1) unlockedPhotos[existingIdx] = decryptedMeta;
+            else unlockedPhotos.unshift(decryptedMeta);
+            restoredCount++;
+            processedLines++;
+
+            if (processedLines % 10 === 0) {
+              showBatchProgress('جاري استرجاع الصور المشفرة من ملف .vault...', processedLines, header.photoCount || processedLines);
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          } catch (lineErr) {
+            // Skip malformed line
+          }
+        }
+      }
+
+      hideBatchProgress();
+      enterVaultDashboard();
+      closeAllModals();
+      showToast(`تم استرجاع ${restoredCount} صورة وألبوماتها من ملف .vault بنجاح!`, 'success');
+    }
+
+    async function resolveVaultDecryptionKey(pkgHeader) {
+      if (currentCryptoKey && currentMasterPassword) {
+        try {
+          const candidateKey = await deriveAesKey(currentMasterPassword, pkgHeader.salt);
+          if (pkgHeader.verifier) {
+            const check = await decryptJsonObject(pkgHeader.verifier, candidateKey);
+            if (check && check.check === 'VAULT_OK') return candidateKey;
+          }
+        } catch (e) {
+          // Prompt below
+        }
+      }
+
+      const pwd = await openCustomPrompt({
+        title: 'أدخل كلمة مرور ملف النسخة الاحتياطية (.vault)',
+        desc: `يحتوي هذا الملف على ${pkgHeader.photoCount || ''} صورة مشفرة بـ AES-256. أدخل كلمة المرور الخاصة به لفك تشفيره واسترجاعه:`,
+        placeholder: 'كلمة المرور...',
+        isPassword: true
+      });
+      if (!pwd) return null;
+
+      try {
+        const candidateKey = await deriveAesKey(pwd, pkgHeader.salt);
+        if (pkgHeader.verifier) {
+          const check = await decryptJsonObject(pkgHeader.verifier, candidateKey);
+          if (!check || check.check !== 'VAULT_OK') throw new Error('Bad verifier');
+        }
+        if (!currentCryptoKey) {
+          currentCryptoKey = candidateKey;
+          currentMasterPassword = pwd;
+          currentSaltBase64 = pkgHeader.salt;
+          await dbSetMeta('verifier', { salt: pkgHeader.salt, checkPayload: pkgHeader.verifier });
+        }
+        return candidateKey;
+      } catch (err) {
+        showToast('كلمة المرور غير صحيحة لملف النسخة الاحتياطية!', 'error');
+        return null;
+      }
+    }
+
+    async function restoreFromVaultPackageObject(pkg) {
+      const decryptKey = await resolveVaultDecryptionKey(pkg);
+      if (!decryptKey) return;
+
+      if (Array.isArray(pkg.albums)) {
+        pkg.albums.forEach((a) => {
+          if (!albumsList.includes(a)) albumsList.push(a);
+        });
+        await dbSetMeta('albums', albumsList);
+      }
+
+      let restoredCount = 0;
+      for (const item of pkg.photos) {
+        try {
+          const decryptedPhoto = await decryptJsonObject(item.payload, decryptKey);
+          const reEncrypted = await encryptJsonObject(decryptedPhoto, currentCryptoKey);
+          await dbPutEncryptedPhoto({ id: decryptedPhoto.id, payload: reEncrypted });
+
+          const existingIdx = unlockedPhotos.findIndex((p) => p.id === decryptedPhoto.id);
+          if (existingIdx !== -1) unlockedPhotos[existingIdx] = decryptedPhoto;
+          else unlockedPhotos.unshift(decryptedPhoto);
+          restoredCount++;
+        } catch (e) {
+          // continue
+        }
+      }
+
+      enterVaultDashboard();
+      closeAllModals();
+      showToast(`تم استرجاع ${restoredCount} صورة وألبوماتها من الملف المشفر بنجاح!`, 'success');
+    }
+
+    async function ensureVaultUnlockedWithPassword(password) {
+      const verifier = await dbGetMeta('verifier');
+      if (!verifier || !verifier.salt) {
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+        const saltBase64 = bytesToBase64(saltBytes);
+        const key = await deriveAesKey(password, saltBase64);
+        const checkPayload = await encryptJsonObject({ check: 'VAULT_OK', created: Date.now() }, key);
+        await dbSetMeta('verifier', { salt: saltBase64, checkPayload });
+        await dbSetMeta('albums', albumsList);
+        currentCryptoKey = key;
+        currentMasterPassword = password;
+        currentSaltBase64 = saltBase64;
+      } else {
+        try {
+          const key = await deriveAesKey(password, verifier.salt);
+          const check = await decryptJsonObject(verifier.checkPayload, key);
+          if (check && check.check === 'VAULT_OK') {
+            currentCryptoKey = key;
+            currentMasterPassword = password;
+            currentSaltBase64 = verifier.salt;
+          }
+        } catch (e) {
+          showToast('كلمة المرور لا تطابق الخزنة الحالية.', 'error');
+        }
+      }
+    }
+
+    // --- OPTIONAL GITHUB REPOSITORY CLOUD SYNC (ENCRYPTED) ---
+    async function loadGhConfig() {
+      const cfg = await dbGetMeta('gh_config');
+      if (cfg) {
+        document.getElementById('ghRepoInput').value = cfg.repo || '';
+        document.getElementById('ghPathInput').value = cfg.path || 'backups/my-photos.vault';
+        document.getElementById('ghTokenInput').value = cfg.token || '';
+      }
+    }
+
+    async function saveGhConfig() {
+      const repo = document.getElementById('ghRepoInput').value.trim();
+      const path = document.getElementById('ghPathInput').value.trim() || 'backups/my-photos.vault';
+      const token = document.getElementById('ghTokenInput').value.trim();
+      await dbSetMeta('gh_config', { repo, path, token });
+      showToast('تم حفظ إعدادات مزامنة GitHub محلياً.', 'success');
+      return { repo, path, token };
+    }
+
+    async function pushVaultToGitHub() {
+      const { repo, path, token } = await saveGhConfig();
+      if (!repo || !token) {
+        showToast('يرجى إدخال اسم المستودع (username/repo) ورمز الوصول (Token).', 'error');
+        return;
+      }
+      if (unlockedPhotos.length === 0) {
+        showToast('الخزنة فارغة! أضف صوراً أولاً قبل رفعها.', 'error');
+        return;
+      }
+
+      showToast('جاري تشفير الخزنة ورفعها إلى مستودع GitHub...', 'info');
+      try {
+        const verifier = await dbGetMeta('verifier');
+        const lines = [
+          JSON.stringify({
+            format: 'AYMEN_ENCRYPTED_PHOTO_VAULT_STREAM',
+            version: '3.0',
+            exportedAt: new Date().toISOString(),
+            photoCount: unlockedPhotos.length,
+            salt: currentSaltBase64,
+            verifier: verifier ? verifier.checkPayload : null,
+            albums: albumsList
+          })
+        ];
+
+        for (const p of unlockedPhotos) {
+          const encMeta = await encryptJsonObject(p, currentCryptoKey);
+          const blobRec = await dbGetEncryptedBlob(p.id);
+          let blobIvB64 = null;
+          let blobCipherB64 = null;
+          if (blobRec && blobRec.cipherBuffer) {
+            blobIvB64 = typeof blobRec.iv === 'string' ? blobRec.iv : bytesToBase64(blobRec.iv);
+            blobCipherB64 = typeof blobRec.cipherBuffer === 'string'
+              ? blobRec.cipherBuffer
+              : bytesToBase64(new Uint8Array(blobRec.cipherBuffer));
+          }
+          lines.push(JSON.stringify({
+            id: p.id,
+            metaPayload: encMeta,
+            blobIv: blobIvB64,
+            blobCipher: blobCipherB64,
+            mimeType: p.mimeType || 'image/jpeg'
+          }));
+        }
+
+        const fullString = lines.join('\n') + '\n';
+        const contentBase64 = bytesToBase64(new TextEncoder().encode(fullString));
+        const apiUrl = `https://api.github.com/repos/${repo}/contents/${path}`;
+
+        let sha = undefined;
+        const getRes = await fetch(apiUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json'
+          }
+        });
+        if (getRes.ok) {
+          const existingData = await getRes.json();
+          sha = existingData.sha;
+        }
+
+        const putRes = await fetch(apiUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: `Update encrypted photo vault backup (${unlockedPhotos.length} photos)`,
+            content: contentBase64,
+            ...(sha ? { sha } : {})
+          })
+        });
+
+        if (!putRes.ok) {
+          throw new Error('GitHub API error');
+        }
+        showToast('تم رفع ملف الخزنة المشفر إلى مستودع GitHub بنجاح!', 'success');
+      } catch (err) {
+        showToast('تعذر الرفع إلى GitHub. تأكد من صحة المستودع، الـ Token، وأن الحجم أقل من حد GitHub API (50MB).', 'error');
+      }
+    }
+
+    async function pullVaultFromGitHub() {
+      const { repo, path, token } = await saveGhConfig();
+      if (!repo || !token) {
+        showToast('يرجى إدخال اسم المستودع ورمز الوصول (Token) أولاً.', 'error');
+        return;
+      }
+
+      showToast('جاري جلب ملف الخزنة المشفر من GitHub...', 'info');
+      try {
+        const apiUrl = `https://api.github.com/repos/${repo}/contents/${path}`;
+        const res = await fetch(apiUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json'
+          }
+        });
+        if (!res.ok) throw new Error('Not found');
+        const data = await res.json();
+        const cleanBase64 = (data.content || '').replace(/\s/g, '');
+        const bytes = base64ToBytes(cleanBase64);
+        const virtualFile = new File([bytes], 'github-backup.vault', { type: 'application/octet-stream' });
+        await handleBackupRestoreFile(virtualFile);
+      } catch (err) {
+        showToast('تعذر جلب النسخة من GitHub. تأكد من وجود الملف وصلاحية الـ Token.', 'error');
+      }
+    }
+
+    // --- EVENT LISTENERS INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      await initDB();
+      await refreshLockScreenState();
+      await loadGhConfig();
+
+      // Cancel Batch Button
+      document.getElementById('cancelBatchBtn').addEventListener('click', () => {
+        batchCancelRequested = true;
+      });
+
+      // Auth Form
+      document.getElementById('authForm').addEventListener('submit', handleAuthSubmit);
+
+      // Toggle Password Visibility
+      document.getElementById('togglePwdBtn').addEventListener('click', () => {
+        const inp = document.getElementById('masterPasswordInput');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      });
+
+      // Lock Screen Restore & Reset
+      const lockRestoreInput = document.getElementById('lockRestoreFileInput');
+      document.getElementById('lockScreenRestoreBtn').addEventListener('click', () => lockRestoreInput.click());
+      lockRestoreInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) handleBackupRestoreFile(e.target.files[0]);
+        e.target.value = '';
+      });
+
+      document.getElementById('lockScreenResetBtn').addEventListener('click', async () => {
+        const confirmed = await openCustomPrompt({
+          title: 'تهيئة خزنة جديدة فارغة؟',
+          desc: 'سيتم مسح البيانات المشفرة الحالية من هذا المتصفح لإنشاء خزنة جديدة بكلمة مرور جديدة. (ملفاتك الاحتياطية المحفوظة بجهازك لن تتأثر).',
+          showInput: false,
+          confirmText: 'نعم، تهيئة خزنة جديدة'
+        });
+        if (confirmed) {
+          await dbClearAll();
+          await refreshLockScreenState();
+          showToast('تمت تهيئة المتصفح لإنشاء خزنة جديدة.', 'info');
+        }
+      });
+
+      // Upload Triggers (Files & Entire Folders) & Drag-and-Drop
+      const photoInput = document.getElementById('photoFileInput');
+      const folderInput = document.getElementById('photoFolderInput');
+      document.getElementById('topUploadBtn').addEventListener('click', () => photoInput.click());
+      document.getElementById('topUploadFolderBtn').addEventListener('click', () => folderInput.click());
+      document.getElementById('emptyUploadBtn').addEventListener('click', () => photoInput.click());
+
+      const dropZone = document.getElementById('dropZone');
+      const uploadControlsArea = document.getElementById('uploadControlsArea');
+      uploadControlsArea.addEventListener('click', (e) => e.stopPropagation());
+      dropZone.addEventListener('click', () => photoInput.click());
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-active');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-active');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          processUploadedFiles(e.dataTransfer.files);
+        }
+      });
+
+      photoInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          processUploadedFiles(e.target.files);
+        }
+        e.target.value = '';
+      });
+
+      folderInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          processUploadedFiles(e.target.files);
+        }
+        e.target.value = '';
+      });
+
+      // Demo Photos Button
+      document.getElementById('loadDemoPhotosBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        generateDemoPhotos();
+      });
+
+      // Search & Sort
+      document.getElementById('searchInput').addEventListener('input', () => {
+        currentPage = 1;
+        renderPhotoGrid();
+      });
+      document.getElementById('sortSelect').addEventListener('change', () => {
+        currentPage = 1;
+        renderPhotoGrid();
+      });
+
+      // Pagination Buttons
+      document.getElementById('prevPageBtn').addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          renderPhotoGrid();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+      document.getElementById('nextPageBtn').addEventListener('click', () => {
+        currentPage++;
+        renderPhotoGrid();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+
+      // New Album Modal
+      document.getElementById('openNewAlbumModalBtn').addEventListener('click', async () => {
+        const albumName = await openCustomPrompt({
+          title: 'إنشاء ألبوم جديد',
+          desc: 'أدخل اسم الألبوم الجديد لتنظيم صورك داخله:',
+          placeholder: 'مثال: العقود والوثائق...'
+        });
+        if (albumName && albumName.trim()) {
+          const clean = albumName.trim();
+          if (!albumsList.includes(clean)) {
+            albumsList.push(clean);
+            await dbSetMeta('albums', albumsList);
+          }
+          activeAlbumFilter = clean;
+          currentPage = 1;
+          syncAlbumSelects();
+          renderAlbumTabs();
+          renderPhotoGrid();
+          showToast(`تمت إضافة ألبوم "${clean}".`, 'success');
+        }
+      });
+
+      // Bulk Selection & Fast Batch Delete
+      document.getElementById('selectAllBtn').addEventListener('click', () => {
+        const filtered = getFilteredAndSortedPhotos();
+        const allSelected = filtered.length > 0 && filtered.every((p) => selectedPhotoIds.has(p.id));
+        if (allSelected) {
+          filtered.forEach((p) => selectedPhotoIds.delete(p.id));
+        } else {
+          filtered.forEach((p) => selectedPhotoIds.add(p.id));
+        }
+        renderPhotoGrid();
+      });
+
+      document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
+        if (selectedPhotoIds.size === 0) return;
+        const confirmed = await openCustomPrompt({
+          title: `حذف ${selectedPhotoIds.size} صورة محددة؟`,
+          desc: 'سيتم حذف الصور المحددة من الخزنة الحالية نهائياً.',
+          showInput: false,
+          confirmText: 'حذف المحدد'
+        });
+        if (!confirmed) return;
+        const idsToDelete = Array.from(selectedPhotoIds);
+        await dbDeletePhotosBatch(idsToDelete);
+        unlockedPhotos = unlockedPhotos.filter((p) => !selectedPhotoIds.has(p.id));
+        selectedPhotoIds.clear();
+        renderAlbumTabs();
+        renderPhotoGrid();
+        updateStorageQuotaUI();
+        showToast('تم حذف الصور المحددة.', 'info');
+      });
+
+      // Backup Modal
+      document.getElementById('openBackupModalBtn').addEventListener('click', () => {
+        document.getElementById('backupModal').classList.remove('hidden');
+      });
+      document.getElementById('emptyRestoreBtn').addEventListener('click', () => {
+        document.getElementById('backupModal').classList.remove('hidden');
+      });
+      document.getElementById('closeBackupModalBtn').addEventListener('click', () => {
+        document.getElementById('backupModal').classList.add('hidden');
+      });
+      document.getElementById('exportVaultFileBtn').addEventListener('click', exportEncryptedVaultFile);
+      document.getElementById('exportZipFileBtn').addEventListener('click', exportStandardZipFile);
+
+      const importBackupInput = document.getElementById('importBackupFileInput');
+      document.getElementById('triggerImportFileBtn').addEventListener('click', () => importBackupInput.click());
+      importBackupInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) handleBackupRestoreFile(e.target.files[0]);
+        e.target.value = '';
+      });
+
+      // Lightbox Controls
+      document.getElementById('closeLightboxBtn').addEventListener('click', () => {
+        revokeLightboxObjectUrl();
+        document.getElementById('lightboxModal').classList.add('hidden');
+      });
+      document.getElementById('zoomInBtn').addEventListener('click', () => {
+        lightboxZoom = Math.min(3.5, lightboxZoom + 0.25);
+        updateLightboxTransform();
+      });
+      document.getElementById('zoomOutBtn').addEventListener('click', () => {
+        lightboxZoom = Math.max(0.5, lightboxZoom - 0.25);
+        updateLightboxTransform();
+      });
+      document.getElementById('rotateImgBtn').addEventListener('click', () => {
+        lightboxRotation = (lightboxRotation + 90) % 360;
+        updateLightboxTransform();
+      });
+      document.getElementById('resetTransformBtn').addEventListener('click', () => {
+        lightboxZoom = 1;
+        lightboxRotation = 0;
+        updateLightboxTransform();
+      });
+      document.getElementById('prevPhotoBtn').addEventListener('click', () => navigateLightbox(-1));
+      document.getElementById('nextPhotoBtn').addEventListener('click', () => navigateLightbox(1));
+
+      document.getElementById('detailFavBtn').addEventListener('click', () => {
+        const photo = unlockedPhotos.find((p) => p.id === currentLightboxId);
+        if (!photo) return;
+        photo.fav = !photo.fav;
+        updateDetailFavUI(photo.fav);
+      });
+
+      document.getElementById('savePhotoDetailsBtn').addEventListener('click', async () => {
+        const photo = unlockedPhotos.find((p) => p.id === currentLightboxId);
+        if (!photo) return;
+        photo.name = document.getElementById('detailNameInput').value.trim() || 'صورة بدون عنوان';
+        photo.album = document.getElementById('detailAlbumSelect').value || 'عام';
+        photo.note = document.getElementById('detailNoteInput').value.trim();
+
+        const enc = await encryptJsonObject(photo, currentCryptoKey);
+        await dbPutEncryptedPhoto({ id: photo.id, payload: enc });
+        renderAlbumTabs();
+        renderPhotoGrid();
+        showToast('تم حفظ وتشفير بيانات الصورة بنجاح!', 'success');
+      });
+
+      document.getElementById('downloadSinglePhotoBtn').addEventListener('click', async () => {
+        const photo = unlockedPhotos.find((p) => p.id === currentLightboxId);
+        if (!photo) return;
+        const blob = await getDecryptedPhotoBlob(photo);
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const ext = (photo.mimeType || '').includes('png') ? 'png' : (photo.mimeType || '').includes('webp') ? 'webp' : 'jpg';
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${photo.name || 'photo'}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      });
+
+      document.getElementById('deleteSinglePhotoBtn').addEventListener('click', async () => {
+        const photo = unlockedPhotos.find((p) => p.id === currentLightboxId);
+        if (!photo) return;
+        await dbDeletePhotosBatch([photo.id]);
+        unlockedPhotos = unlockedPhotos.filter((p) => p.id !== photo.id);
+        selectedPhotoIds.delete(photo.id);
+        revokeLightboxObjectUrl();
+        document.getElementById('lightboxModal').classList.add('hidden');
+        renderAlbumTabs();
+        renderPhotoGrid();
+        updateStorageQuotaUI();
+        showToast('تم حذف الصورة من الخزنة.', 'info');
+      });
+
+      // Settings & GitHub Sync Modal
+      document.getElementById('openSettingsModalBtn').addEventListener('click', () => {
+        updateStorageQuotaUI();
+        document.getElementById('settingsModal').classList.remove('hidden');
+      });
+      document.getElementById('closeSettingsModalBtn').addEventListener('click', () => {
+        document.getElementById('settingsModal').classList.add('hidden');
+      });
+      document.getElementById('autoLockSelect').addEventListener('change', (e) => {
+        autoLockMinutes = Number(e.target.value);
+        resetAutoLockTimer();
+        showToast(autoLockMinutes > 0 ? `تم ضبط القفل التلقائي بعد ${autoLockMinutes} دقيقة.` : 'تم إيقاف القفل التلقائي.', 'info');
+      });
+
+      document.getElementById('changeMasterPwdBtn').addEventListener('click', async () => {
+        const newPwd = document.getElementById('newMasterPwdInput').value;
+        if (!newPwd || newPwd.length < 4) {
+          showToast('يرجى إدخال كلمة مرور جديدة لا تقل عن 4 أحرف.', 'error');
+          return;
+        }
+        const total = unlockedPhotos.length;
+        showBatchProgress('جاري إعادة تشفير الخزنة بكلمة المرور الجديدة...', 0, total);
+
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+        const newSaltBase64 = bytesToBase64(saltBytes);
+        const newKey = await deriveAesKey(newPwd, newSaltBase64);
+        const checkPayload = await encryptJsonObject({ check: 'VAULT_OK', created: Date.now() }, newKey);
+
+        await dbSetMeta('verifier', { salt: newSaltBase64, checkPayload });
+
+        for (let i = 0; i < total; i++) {
+          const p = unlockedPhotos[i];
+          const encMeta = await encryptJsonObject(p, newKey);
+          const blobRec = await dbGetEncryptedBlob(p.id);
+          const batchBlobs = [];
+          if (blobRec && blobRec.cipherBuffer) {
+            const plainBuf = await decryptBinaryBuffer(blobRec.iv, blobRec.cipherBuffer, currentCryptoKey);
+            const reEncBlob = await encryptBinaryBuffer(plainBuf, newKey);
+            batchBlobs.push({ id: p.id, iv: reEncBlob.iv, cipherBuffer: reEncBlob.cipherBuffer, mimeType: blobRec.mimeType });
+          }
+          await dbPutBatch([{ id: p.id, payload: encMeta }], batchBlobs);
+          if (i % 10 === 0 || i === total - 1) {
+            showBatchProgress('جاري إعادة تشفير الخزنة بكلمة المرور الجديدة...', i + 1, total);
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
+
+        hideBatchProgress();
+        currentCryptoKey = newKey;
+        currentMasterPassword = newPwd;
+        currentSaltBase64 = newSaltBase64;
+        document.getElementById('newMasterPwdInput').value = '';
+        showToast('تم تغيير كلمة المرور وإعادة تشفير جميع الصور بنجاح!', 'success');
+      });
+
+      document.getElementById('saveGhConfigBtn').addEventListener('click', saveGhConfig);
+      document.getElementById('pushToGhBtn').addEventListener('click', pushVaultToGitHub);
+      document.getElementById('pullFromGhBtn').addEventListener('click', pullVaultFromGitHub);
+
+      // Guide Modal
+      document.getElementById('openGuideModalBtn').addEventListener('click', () => {
+        document.getElementById('guideModal').classList.remove('hidden');
+      });
+      document.getElementById('closeGuideModalBtn').addEventListener('click', () => {
+        document.getElementById('guideModal').classList.add('hidden');
+      });
+      document.getElementById('gotItGuideBtn').addEventListener('click', () => {
+        document.getElementById('guideModal').classList.add('hidden');
+      });
+
+      // Quick Lock Button & Escape Shortcut
+      document.getElementById('quickLockBtn').addEventListener('click', lockVaultNow);
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && currentCryptoKey) {
+          if (activePromptCleanup) {
+            activePromptCleanup(null);
+            return;
+          }
+          const anyModalOpen = ['backupModal', 'lightboxModal', 'settingsModal', 'guideModal'].some(
+            (id) => !document.getElementById(id).classList.contains('hidden')
+          );
+          if (anyModalOpen) {
+            closeAllModals();
+          } else {
+            lockVaultNow();
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
